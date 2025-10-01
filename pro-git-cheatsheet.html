@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pro Git Cheatsheet</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f9f9f9;
+      color: #333;
+      line-height: 1.6;
+      padding: 2rem;
+    }
+    .search-box {
+      margin-bottom: 1rem;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.5rem;
+      font-size: 1rem;
+    }
+    .topic {
+      margin: 1rem 0;
+      background: white;
+      padding: 1rem;
+      border-left: 5px solid #3f51b5;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    .topic h2 {
+      margin-top: 0;
+      color: #3f51b5;
+    }
+    pre {
+      background-color: #eee;
+      padding: 0.5rem;
+      overflow-x: auto;
+    }
+    .desc {
+      font-style: italic;
+      color: #666;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Pro Git Cheatsheet</h1>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="Search for topics...">
+  </div>
+  <div id="content"></div>
+
+  <script>
+    const topics = [
+      {
+        title: "Configuration",
+        content: `Set user identity and view current settings.` + `\n\n- **git config --global user.name \"Your Name\"**: Set global username.\n- **git config --global user.email \"you@example.com\"**: Set global email.\n- **git config --list**: Show all configuration.`
+      },
+      {
+        title: "Staging & Committing",
+        content: `Prepare and save changes to the repository.` + `\n\n- **git add file.txt**: Stage file changes.\n- **git commit -m \"Message\"**: Commit staged files with a message.\n- **git commit -am \"Msg\"**: Stage and commit tracked files in one step.`
+      },
+      {
+        title: "Viewing Changes & History",
+        content: `Inspect code differences and track commit history.` + `\n\n- **git diff**: Show unstaged changes.\n- **git diff --staged**: Show staged but uncommitted changes.\n- **git log --oneline**: Short summary of commit history.\n- **git show [commit]**: Show details of a specific commit.`
+      },
+      {
+        title: "Branching",
+        content: `Work on multiple versions of a repository concurrently.` + `\n\n- **git branch**: List existing branches.\n- **git branch new-feature**: Create new branch.\n- **git checkout new-feature**: Switch to new-feature branch.\n- **git switch -c new-feature**: Create and switch to branch.`
+      },
+      {
+        title: "Merging Branches (Ways to Merge)",
+        content: `Integrate changes from one branch into another.` + `\n\n- **git merge branch**: Merge another branch into current.\n- **git merge --no-ff branch**: Force a merge commit even if not needed.\n- **git merge --squash branch**: Combine commits into one before merging.`
+      },
+      {
+        title: "Rebasing",
+        content: `Reapply commits on top of another base branch.` + `\n\n- **git rebase main**: Move current branch to top of main.\n- **git rebase -i HEAD~3**: Reorder/edit last 3 commits.\n- **git rebase --continue/--abort**: Continue or cancel an interrupted rebase.`
+      },
+      {
+        title: "Renaming Branches",
+        content: `Change the name of a local or remote branch.` + `\n\n- **git branch -m old new**: Rename branch locally.\n- **git push origin :old new**: Push new name and remove old from remote.\n- **git push origin -u new**: Set upstream tracking.`
+      },
+      {
+        title: "Stashing",
+        content: `Temporarily save changes without committing.` + `\n\n- **git stash**: Save changes to a stash stack.\n- **git stash pop**: Restore and remove top stash.\n- **git stash list/show/apply/drop**: Manage stashed items.`
+      },
+      {
+        title: "Remote Repositories",
+        content: `Manage connections to shared Git repositories.` + `\n\n- **git remote -v**: View all remotes.\n- **git remote add origin [url]**: Add a remote repository.\n- **git push -u origin master**: Push and set tracking for master.`
+      },
+      {
+        title: "Syncing with Remote",
+        content: `Synchronize local repository with remote changes.` + `\n\n- **git fetch**: Download changes from remote.\n- **git pull**: Fetch and merge changes.\n- **git push**: Upload local commits to remote.`
+      },
+      {
+        title: "Tags",
+        content: `Mark specific points in history (like releases).` + `\n\n- **git tag v1.0**: Create lightweight tag.\n- **git tag -a v1.0 -m \"msg\"**: Annotated tag with message.\n- **git push origin --tags**: Upload all tags to remote.`
+      },
+      {
+        title: "Cleaning Up",
+        content: `Remove unneeded files and optimize repository.` + `\n\n- **git clean -fd**: Remove untracked files and directories.\n- **git gc**: Cleanup unnecessary files and optimize repo.\n- **git prune**: Remove unreachable objects.`
+      },
+      {
+        title: "Amending Commits",
+        content: `Modify the last commit without creating a new one.` + `\n\n- **git commit --amend**: Update message or include new changes.`
+      },
+      {
+        title: "Tips & Shortcuts",
+        content: `Handy tricks to speed up common tasks.` + `\n\n- **git log --graph --oneline --all**: View commit history graph.\n- **git checkout -**: Switch to previous branch.\n- **git diff HEAD~1**: Show changes from last commit.\n- Use aliases: **git config --global alias.co checkout**`
+      }
+    ];
+
+    const contentDiv = document.getElementById("content");
+    const searchInput = document.getElementById("searchInput");
+
+    function renderTopics(filter = "") {
+      contentDiv.innerHTML = "";
+      topics.filter(topic => {
+        const searchText = filter.toLowerCase();
+        return topic.title.toLowerCase().includes(searchText) || topic.content.toLowerCase().includes(searchText);
+      }).forEach(topic => {
+        const div = document.createElement("div");
+        div.className = "topic";
+        div.innerHTML = `<h2>${topic.title}</h2><pre>${topic.content}</pre>`;
+        contentDiv.appendChild(div);
+      });
+    }
+
+    searchInput.addEventListener("input", e => renderTopics(e.target.value));
+    renderTopics();
+  </script>
+</body>
+</html>
