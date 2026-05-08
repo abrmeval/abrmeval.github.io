@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Server Numeric Data Types Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #1e3c72;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.8em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.3em;
+        }
+        
+        h2 {
+            color: #2a5298;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #1e3c72;
+            font-size: 2em;
+        }
+        
+        h3 {
+            color: #1e3c72;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        
+        .hero-box {
+            background: linear-gradient(135deg, #1e3c7215 0%, #2a529815 100%);
+            border: 3px solid #1e3c72;
+            padding: 30px;
+            margin: 30px 0;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.2em;
+        }
+        
+        .concept-box {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-left: 5px solid #2196f3;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .key-insight {
+            background: #fff9c4;
+            border-left: 5px solid #fbc02d;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .warning-box {
+            background: #ffebee;
+            border-left: 5px solid #e53935;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .success-box {
+            background: #e8f5e9;
+            border-left: 5px solid #4caf50;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .info-box {
+            background: #e1f5fe;
+            border-left: 5px solid #03a9f4;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            font-size: 0.95em;
+        }
+        
+        .comparison-table thead {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .comparison-table tbody tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .comparison-table tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+        
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+            line-height: 1.6;
+            border: 2px solid #2a5298;
+        }
+        
+        .sql-keyword {
+            color: #569cd6;
+            font-weight: bold;
+        }
+        
+        .sql-type {
+            color: #4ec9b0;
+        }
+        
+        .sql-string {
+            color: #ce9178;
+        }
+        
+        .sql-number {
+            color: #b5cea8;
+        }
+        
+        .sql-comment {
+            color: #6a9955;
+            font-style: italic;
+        }
+        
+        .storage-visual {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 25px 0;
+        }
+        
+        .storage-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .storage-label {
+            min-width: 150px;
+            font-weight: bold;
+            color: #1e3c72;
+        }
+        
+        .storage-bar {
+            flex: 1;
+            height: 40px;
+            background: linear-gradient(90deg, #2196f3, #1976d2);
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        .precision-scale-demo {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin: 25px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .number-breakdown {
+            display: flex;
+            font-family: 'Courier New', monospace;
+            font-size: 2em;
+            justify-content: center;
+            margin: 20px 0;
+            gap: 5px;
+        }
+        
+        .digit {
+            padding: 10px 15px;
+            border: 2px solid #1e3c72;
+            border-radius: 5px;
+            background: white;
+        }
+        
+        .digit.integer {
+            background: #bbdefb;
+        }
+        
+        .digit.decimal {
+            background: #fff9c4;
+        }
+        
+        .digit.point {
+            background: #e0e0e0;
+            border: none;
+        }
+        
+        .example-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 25px 0;
+            border: 2px solid #e0e0e0;
+        }
+        
+        .example-title {
+            color: #1e3c72;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
+        .highlight {
+            background: #ffeb3b;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin: 0 5px;
+        }
+        
+        .badge-precision {
+            background: #2196f3;
+            color: white;
+        }
+        
+        .badge-scale {
+            background: #fbc02d;
+            color: #333;
+        }
+        
+        .badge-storage {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 25px 0;
+        }
+        
+        .column-box {
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+        }
+        
+        .column-box.good {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
+        
+        .column-box.bad {
+            background: #ffebee;
+            border-color: #e53935;
+        }
+        
+        .visual-range {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 10px;
+        }
+        
+        .range-line {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+            position: relative;
+        }
+        
+        .range-bar {
+            flex: 1;
+            height: 8px;
+            background: linear-gradient(90deg, #e53935, #fbc02d, #4caf50);
+            border-radius: 4px;
+            position: relative;
+        }
+        
+        .range-marker {
+            position: absolute;
+            width: 3px;
+            height: 20px;
+            background: #333;
+            top: -6px;
+        }
+        
+        .range-label {
+            position: absolute;
+            top: 25px;
+            font-size: 0.85em;
+            color: #666;
+            white-space: nowrap;
+        }
+        
+        .emoji {
+            font-size: 1.3em;
+        }
+        
+        @media (max-width: 768px) {
+            .two-column {
+                grid-template-columns: 1fr;
+            }
+            
+            .number-breakdown {
+                font-size: 1.5em;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗄️ SQL Server Numeric Data Types</h1>
+        <p class="subtitle">Complete Guide to DECIMAL, NUMERIC, and All Numeric Types</p>
+        
+        <div class="hero-box">
+            <p style="font-size: 1.3em; margin-bottom: 15px;">SQL Server provides several numeric data types for storing numbers with different characteristics. Understanding the difference between exact numeric types like DECIMAL and NUMERIC versus approximate types like FLOAT and REAL is crucial for choosing the right type for your data.</p>
+            <p style="color: #666; font-size: 1em;">This guide will help you understand when to use each type, how they store data, and what trade-offs you are making.</p>
+        </div>
+
+        <h2>📊 Overview: All SQL Server Numeric Types</h2>
+        
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Category</th>
+                    <th>Storage</th>
+                    <th>Precision</th>
+                    <th>Range</th>
+                    <th>Best Use Case</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="background-color: #fff9c4;">
+                    <td><strong>DECIMAL(p,s)</strong></td>
+                    <td>Exact Numeric</td>
+                    <td>5-17 bytes</td>
+                    <td>Up to 38 digits</td>
+                    <td>-10³⁸+1 to 10³⁸-1</td>
+                    <td>Financial data, monetary values</td>
+                </tr>
+                <tr style="background-color: #fff9c4;">
+                    <td><strong>NUMERIC(p,s)</strong></td>
+                    <td>Exact Numeric</td>
+                    <td>5-17 bytes</td>
+                    <td>Up to 38 digits</td>
+                    <td>-10³⁸+1 to 10³⁸-1</td>
+                    <td>Same as DECIMAL (synonyms)</td>
+                </tr>
+                <tr>
+                    <td><strong>INT</strong></td>
+                    <td>Exact Integer</td>
+                    <td>4 bytes</td>
+                    <td>10 digits</td>
+                    <td>-2,147,483,648 to 2,147,483,647</td>
+                    <td>General integer values, IDs</td>
+                </tr>
+                <tr>
+                    <td><strong>BIGINT</strong></td>
+                    <td>Exact Integer</td>
+                    <td>8 bytes</td>
+                    <td>19 digits</td>
+                    <td>-9 quintillion to 9 quintillion</td>
+                    <td>Very large integers</td>
+                </tr>
+                <tr>
+                    <td><strong>SMALLINT</strong></td>
+                    <td>Exact Integer</td>
+                    <td>2 bytes</td>
+                    <td>5 digits</td>
+                    <td>-32,768 to 32,767</td>
+                    <td>Small integers, ages, quantities</td>
+                </tr>
+                <tr>
+                    <td><strong>TINYINT</strong></td>
+                    <td>Exact Integer</td>
+                    <td>1 byte</td>
+                    <td>3 digits</td>
+                    <td>0 to 255</td>
+                    <td>Very small positive integers</td>
+                </tr>
+                <tr>
+                    <td><strong>MONEY</strong></td>
+                    <td>Exact Monetary</td>
+                    <td>8 bytes</td>
+                    <td>4 decimal places</td>
+                    <td>-922 trillion to 922 trillion</td>
+                    <td>Currency (but DECIMAL preferred)</td>
+                </tr>
+                <tr>
+                    <td><strong>SMALLMONEY</strong></td>
+                    <td>Exact Monetary</td>
+                    <td>4 bytes</td>
+                    <td>4 decimal places</td>
+                    <td>-214,748.3648 to 214,748.3647</td>
+                    <td>Small currency values</td>
+                </tr>
+                <tr style="background-color: #ffebee;">
+                    <td><strong>FLOAT(n)</strong></td>
+                    <td>Approximate</td>
+                    <td>4 or 8 bytes</td>
+                    <td>7 or 15 digits</td>
+                    <td>±1.79E+308</td>
+                    <td>Scientific calculations</td>
+                </tr>
+                <tr style="background-color: #ffebee;">
+                    <td><strong>REAL</strong></td>
+                    <td>Approximate</td>
+                    <td>4 bytes</td>
+                    <td>7 digits</td>
+                    <td>±3.40E+38</td>
+                    <td>Approximate calculations</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="key-insight">
+            <h3><span class="emoji">🎯</span> Key Distinction: Exact vs Approximate</h3>
+            <p>The most important concept to understand is the difference between exact numeric types and approximate numeric types. Exact types like DECIMAL and NUMERIC store numbers precisely as you define them, with no rounding errors. Approximate types like FLOAT and REAL use floating-point arithmetic and may introduce small rounding errors, just like the float and double types in C# that we discussed earlier.</p>
+            <p style="margin-top: 15px;">For financial data, you always want exact numeric types. For scientific or statistical calculations where you need a huge range and can tolerate tiny rounding errors, approximate types work well.</p>
+        </div>
+
+        <h2>🔢 DECIMAL and NUMERIC: The Stars of the Show</h2>
+        
+        <div class="concept-box">
+            <h3>What Are DECIMAL and NUMERIC?</h3>
+            <p>DECIMAL and NUMERIC are functionally identical in SQL Server. They are exact numeric types that allow you to specify exactly how many total digits you want (precision) and how many of those digits should come after the decimal point (scale). This gives you complete control over the size and precision of your numbers.</p>
+            
+            <p style="margin-top: 15px;">The syntax looks like this: <span class="highlight">DECIMAL(precision, scale)</span> or <span class="highlight">NUMERIC(precision, scale)</span></p>
+            
+            <p style="margin-top: 15px;">For example, DECIMAL(10, 2) means a number with up to 10 total digits, where 2 of those digits come after the decimal point. This would allow values like 12345678.90 but not 123456789.99 (too many digits) or 1234567.890 (too many decimal places).</p>
+        </div>
+
+        <h3>Understanding Precision and Scale</h3>
+        
+        <div class="precision-scale-demo">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <p style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px;">Example: DECIMAL(10, 2)</p>
+                <div class="number-breakdown">
+                    <div class="digit integer">1</div>
+                    <div class="digit integer">2</div>
+                    <div class="digit integer">3</div>
+                    <div class="digit integer">4</div>
+                    <div class="digit integer">5</div>
+                    <div class="digit integer">6</div>
+                    <div class="digit integer">7</div>
+                    <div class="digit integer">8</div>
+                    <div class="digit point">.</div>
+                    <div class="digit decimal">9</div>
+                    <div class="digit decimal">0</div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <span class="badge badge-precision">Precision: 10 total digits</span>
+                    <span class="badge badge-scale">Scale: 2 decimal digits</span>
+                </div>
+            </div>
+            
+            <div style="border-top: 2px solid #ddd; padding-top: 20px;">
+                <p><strong>Precision (p):</strong> The maximum total number of decimal digits that can be stored, both to the left and right of the decimal point. Precision can range from 1 to 38 in SQL Server. This is your total "digit budget."</p>
+                
+                <p style="margin-top: 15px;"><strong>Scale (s):</strong> The number of decimal digits that are stored to the right of the decimal point. Scale must be less than or equal to precision. This determines how many of your total digits are reserved for the fractional part.</p>
+                
+                <p style="margin-top: 15px;"><strong>Integer digits:</strong> The number of digits to the left of the decimal point, which equals precision minus scale. In DECIMAL(10, 2), you get 8 digits before the decimal point and 2 digits after.</p>
+            </div>
+        </div>
+
+        <div class="example-section">
+            <div class="example-title">Visual Examples of Different DECIMAL Definitions</div>
+            
+            <div style="margin: 20px 0; padding: 15px; background: white; border-radius: 5px;">
+                <p><strong>DECIMAL(5, 2)</strong> - Small precision, 2 decimal places</p>
+                <p style="margin-top: 10px; font-family: monospace; font-size: 1.1em; color: #2a5298;">
+                    ✅ Valid: 123.45, -999.99, 0.01<br>
+                    ❌ Invalid: 1234.56 (too many total digits), 12.345 (too many decimal places)
+                </p>
+            </div>
+            
+            <div style="margin: 20px 0; padding: 15px; background: white; border-radius: 5px;">
+                <p><strong>DECIMAL(10, 4)</strong> - Medium precision, 4 decimal places</p>
+                <p style="margin-top: 10px; font-family: monospace; font-size: 1.1em; color: #2a5298;">
+                    ✅ Valid: 123456.7890, -99999.1234, 1.0001<br>
+                    ❌ Invalid: 1234567.8901 (too many total digits), 12345.67890 (too many decimal places)
+                </p>
+            </div>
+            
+            <div style="margin: 20px 0; padding: 15px; background: white; border-radius: 5px;">
+                <p><strong>DECIMAL(18, 0)</strong> - High precision, no decimal places (integer)</p>
+                <p style="margin-top: 10px; font-family: monospace; font-size: 1.1em; color: #2a5298;">
+                    ✅ Valid: 123456789012345678, -999999999999999999, 42<br>
+                    ❌ Invalid: 123.45 (has decimal places), 1234567890123456789 (too many digits)
+                </p>
+            </div>
+            
+            <div style="margin: 20px 0; padding: 15px; background: white; border-radius: 5px;">
+                <p><strong>DECIMAL(38, 10)</strong> - Maximum precision, 10 decimal places</p>
+                <p style="margin-top: 10px; font-family: monospace; font-size: 1.1em; color: #2a5298;">
+                    ✅ Valid: 1234567890123456789012345678.1234567890<br>
+                    ❌ Invalid: Nothing with more than 38 total digits or more than 10 decimal places
+                </p>
+            </div>
+        </div>
+
+        <h2>💾 Storage Requirements</h2>
+        
+        <div class="info-box">
+            <h3>How SQL Server Calculates Storage for DECIMAL/NUMERIC</h3>
+            <p>Unlike fixed-size types like INT (always 4 bytes) or BIGINT (always 8 bytes), DECIMAL and NUMERIC types use variable storage based on the precision you specify. SQL Server is smart about this and only uses the bytes it needs for your chosen precision level.</p>
+        </div>
+        
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Precision Range</th>
+                    <th>Storage Required</th>
+                    <th>Example Declarations</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1 - 9 digits</td>
+                    <td><span class="badge badge-storage">5 bytes</span></td>
+                    <td>DECIMAL(9,2), NUMERIC(7,3)</td>
+                </tr>
+                <tr>
+                    <td>10 - 19 digits</td>
+                    <td><span class="badge badge-storage">9 bytes</span></td>
+                    <td>DECIMAL(15,4), NUMERIC(19,0)</td>
+                </tr>
+                <tr>
+                    <td>20 - 28 digits</td>
+                    <td><span class="badge badge-storage">13 bytes</span></td>
+                    <td>DECIMAL(25,5), NUMERIC(28,2)</td>
+                </tr>
+                <tr>
+                    <td>29 - 38 digits</td>
+                    <td><span class="badge badge-storage">17 bytes</span></td>
+                    <td>DECIMAL(38,10), NUMERIC(38,0)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="storage-visual">
+            <div class="storage-row">
+                <div class="storage-label">DECIMAL(5,2)</div>
+                <div class="storage-bar" style="max-width: 25%;">5 bytes</div>
+            </div>
+            <div class="storage-row">
+                <div class="storage-label">DECIMAL(15,4)</div>
+                <div class="storage-bar" style="max-width: 45%;">9 bytes</div>
+            </div>
+            <div class="storage-row">
+                <div class="storage-label">DECIMAL(25,5)</div>
+                <div class="storage-bar" style="max-width: 65%;">13 bytes</div>
+            </div>
+            <div class="storage-row">
+                <div class="storage-label">DECIMAL(38,10)</div>
+                <div class="storage-bar" style="max-width: 85%;">17 bytes</div>
+            </div>
+        </div>
+
+        <div class="key-insight">
+            <h3><span class="emoji">💡</span> Storage Optimization Tip</h3>
+            <p>Choose the smallest precision that meets your needs! If you only need 2 decimal places and values up to 999,999.99, use DECIMAL(8,2) which only takes 5 bytes instead of DECIMAL(18,2) which takes 9 bytes. In large tables with millions of rows, this difference adds up significantly.</p>
+            <p style="margin-top: 15px;">For example, a table with 10 million rows using DECIMAL(8,2) instead of DECIMAL(18,2) saves 40 megabytes of storage (and improves query performance because less data needs to be read from disk).</p>
+        </div>
+
+        <h2>📝 SQL Code Examples</h2>
+
+        <div class="example-section">
+            <div class="example-title">Creating a Table with DECIMAL Columns</div>
+            <div class="code-block">
+<span class="sql-comment">-- Example: E-commerce products table</span>
+<span class="sql-keyword">CREATE TABLE</span> Products (
+    ProductID <span class="sql-type">INT</span> <span class="sql-keyword">PRIMARY KEY</span>,
+    ProductName <span class="sql-type">NVARCHAR</span>(<span class="sql-number">100</span>),
+    
+    <span class="sql-comment">-- Price with 2 decimal places (up to 9,999,999.99)</span>
+    Price <span class="sql-type">DECIMAL</span>(<span class="sql-number">9</span>, <span class="sql-number">2</span>) <span class="sql-keyword">NOT NULL</span>,
+    
+    <span class="sql-comment">-- Tax rate as percentage (up to 99.9999%)</span>
+    TaxRate <span class="sql-type">DECIMAL</span>(<span class="sql-number">6</span>, <span class="sql-number">4</span>) <span class="sql-keyword">DEFAULT</span> <span class="sql-number">0.0000</span>,
+    
+    <span class="sql-comment">-- Discount percentage (0.00 to 100.00)</span>
+    DiscountPercent <span class="sql-type">DECIMAL</span>(<span class="sql-number">5</span>, <span class="sql-number">2</span>) <span class="sql-keyword">DEFAULT</span> <span class="sql-number">0.00</span>,
+    
+    <span class="sql-comment">-- Weight in kilograms with high precision</span>
+    WeightKg <span class="sql-type">NUMERIC</span>(<span class="sql-number">10</span>, <span class="sql-number">4</span>),
+    
+    <span class="sql-comment">-- Quantity in stock (integer, no decimals needed)</span>
+    QuantityInStock <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>, <span class="sql-number">0</span>) <span class="sql-keyword">DEFAULT</span> <span class="sql-number">0</span>
+);
+            </div>
+        </div>
+
+        <div class="example-section">
+            <div class="example-title">Inserting Data with DECIMAL Values</div>
+            <div class="code-block">
+<span class="sql-comment">-- Insert products with various decimal values</span>
+<span class="sql-keyword">INSERT INTO</span> Products (ProductID, ProductName, Price, TaxRate, DiscountPercent, WeightKg, QuantityInStock)
+<span class="sql-keyword">VALUES</span>
+    (<span class="sql-number">1</span>, <span class="sql-string">'Laptop'</span>, <span class="sql-number">1299.99</span>, <span class="sql-number">0.0825</span>, <span class="sql-number">10.00</span>, <span class="sql-number">2.3456</span>, <span class="sql-number">50</span>),
+    (<span class="sql-number">2</span>, <span class="sql-string">'Mouse'</span>, <span class="sql-number">29.95</span>, <span class="sql-number">0.0825</span>, <span class="sql-number">5.50</span>, <span class="sql-number">0.1250</span>, <span class="sql-number">500</span>),
+    (<span class="sql-number">3</span>, <span class="sql-string">'Monitor'</span>, <span class="sql-number">449.00</span>, <span class="sql-number">0.0825</span>, <span class="sql-number">15.00</span>, <span class="sql-number">5.6789</span>, <span class="sql-number">75</span>);
+
+<span class="sql-comment">-- Calculate final price with tax and discount</span>
+<span class="sql-keyword">SELECT</span> 
+    ProductName,
+    Price <span class="sql-keyword">AS</span> OriginalPrice,
+    Price * DiscountPercent / <span class="sql-number">100</span> <span class="sql-keyword">AS</span> DiscountAmount,
+    Price - (Price * DiscountPercent / <span class="sql-number">100</span>) <span class="sql-keyword">AS</span> PriceAfterDiscount,
+    (Price - (Price * DiscountPercent / <span class="sql-number">100</span>)) * (<span class="sql-number">1</span> + TaxRate) <span class="sql-keyword">AS</span> FinalPrice
+<span class="sql-keyword">FROM</span> Products;
+            </div>
+        </div>
+
+        <div class="example-section">
+            <div class="example-title">Financial Calculations with DECIMAL</div>
+            <div class="code-block">
+<span class="sql-comment">-- Banking account transactions table</span>
+<span class="sql-keyword">CREATE TABLE</span> AccountTransactions (
+    TransactionID <span class="sql-type">BIGINT</span> <span class="sql-keyword">PRIMARY KEY</span>,
+    AccountNumber <span class="sql-type">VARCHAR</span>(<span class="sql-number">20</span>),
+    TransactionDate <span class="sql-type">DATETIME</span>,
+    
+    <span class="sql-comment">-- Transaction amount (up to 99,999,999.99)</span>
+    Amount <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>, <span class="sql-number">2</span>) <span class="sql-keyword">NOT NULL</span>,
+    
+    <span class="sql-comment">-- Running balance (up to billions with 2 decimal places)</span>
+    Balance <span class="sql-type">DECIMAL</span>(<span class="sql-number">18</span>, <span class="sql-number">2</span>) <span class="sql-keyword">NOT NULL</span>,
+    
+    <span class="sql-comment">-- Interest rate (like 0.0325 for 3.25%)</span>
+    InterestRate <span class="sql-type">DECIMAL</span>(<span class="sql-number">6</span>, <span class="sql-number">4</span>),
+    
+    TransactionType <span class="sql-type">VARCHAR</span>(<span class="sql-number">20</span>)
+);
+
+<span class="sql-comment">-- Calculate interest earned over a period</span>
+<span class="sql-keyword">SELECT</span> 
+    AccountNumber,
+    Balance,
+    InterestRate,
+    <span class="sql-comment">-- Exact calculation with no rounding errors</span>
+    Balance * InterestRate <span class="sql-keyword">AS</span> InterestEarned,
+    Balance + (Balance * InterestRate) <span class="sql-keyword">AS</span> NewBalance
+<span class="sql-keyword">FROM</span> AccountTransactions
+<span class="sql-keyword">WHERE</span> TransactionType = <span class="sql-string">'INTEREST_POSTING'</span>;
+            </div>
+        </div>
+
+        <h2>⚖️ DECIMAL vs Other Numeric Types</h2>
+
+        <div class="two-column">
+            <div class="column-box good">
+                <h3 style="color: #4caf50;">✅ When to Use DECIMAL/NUMERIC</h3>
+                <p><strong>Financial calculations:</strong> Money, prices, account balances, invoices</p>
+                <p style="margin-top: 10px;"><strong>Exact arithmetic:</strong> Tax calculations, interest rates, percentages</p>
+                <p style="margin-top: 10px;"><strong>Legal requirements:</strong> Regulatory reporting where exactness is mandated</p>
+                <p style="margin-top: 10px;"><strong>Currency:</strong> Any monetary values where rounding errors are unacceptable</p>
+                <p style="margin-top: 10px;"><strong>Scientific measurements:</strong> When you need exact decimal representation</p>
+            </div>
+            
+            <div class="column-box bad">
+                <h3 style="color: #e53935;">❌ When NOT to Use DECIMAL/NUMERIC</h3>
+                <p><strong>Integer-only data:</strong> Use INT, BIGINT, SMALLINT instead (faster and less storage)</p>
+                <p style="margin-top: 10px;"><strong>Scientific calculations:</strong> Use FLOAT for huge ranges and where tiny rounding is acceptable</p>
+                <p style="margin-top: 10px;"><strong>Statistical analysis:</strong> FLOAT is faster and the approximation doesn't matter</p>
+                <p style="margin-top: 10px;"><strong>Extreme precision needs:</strong> DECIMAL maxes out at 38 digits</p>
+            </div>
+        </div>
+
+        <h3>DECIMAL vs MONEY Type</h3>
+        
+        <div class="warning-box">
+            <h3><span class="emoji">⚠️</span> Important: Prefer DECIMAL over MONEY</h3>
+            <p>SQL Server has a MONEY data type that seems designed for financial data, but the modern best practice is to use DECIMAL instead. Here is why:</p>
+            
+            <p style="margin-top: 15px;"><strong>MONEY limitations:</strong> Fixed at 4 decimal places, less flexible than DECIMAL, has some quirky rounding behaviors in certain operations, and is a SQL Server-specific type (less portable).</p>
+            
+            <p style="margin-top: 15px;"><strong>DECIMAL advantages:</strong> You control the precision and scale, more consistent arithmetic behavior, ANSI SQL standard (portable to other databases), and more transparent behavior.</p>
+            
+            <div class="code-block" style="margin-top: 15px;">
+<span class="sql-comment">-- Old approach (not recommended)</span>
+<span class="sql-keyword">CREATE TABLE</span> Orders (
+    OrderTotal <span class="sql-type">MONEY</span>  <span class="sql-comment">-- Fixed 4 decimal places</span>
+);
+
+<span class="sql-comment">-- Modern approach (recommended)</span>
+<span class="sql-keyword">CREATE TABLE</span> Orders (
+    OrderTotal <span class="sql-type">DECIMAL</span>(<span class="sql-number">19</span>, <span class="sql-number">4</span>)  <span class="sql-comment">-- Explicit control</span>
+);
+            </div>
+        </div>
+
+        <h3>DECIMAL vs FLOAT</h3>
+        
+        <div class="example-section">
+            <div class="example-title">Demonstrating the Difference</div>
+            <div class="code-block">
+<span class="sql-comment">-- Create comparison table</span>
+<span class="sql-keyword">CREATE TABLE</span> NumberComparison (
+    TestValue <span class="sql-type">VARCHAR</span>(<span class="sql-number">50</span>),
+    AsDecimal <span class="sql-type">DECIMAL</span>(<span class="sql-number">18</span>, <span class="sql-number">10</span>),
+    AsFloat <span class="sql-type">FLOAT</span>
+);
+
+<span class="sql-comment">-- Insert test values</span>
+<span class="sql-keyword">INSERT INTO</span> NumberComparison <span class="sql-keyword">VALUES</span>
+    (<span class="sql-string">'Simple decimal'</span>, <span class="sql-number">0.1</span>, <span class="sql-number">0.1</span>),
+    (<span class="sql-string">'Sum that should equal 0.3'</span>, <span class="sql-number">0.1</span> + <span class="sql-number">0.2</span>, <span class="sql-number">0.1</span> + <span class="sql-number">0.2</span>),
+    (<span class="sql-string">'One third'</span>, <span class="sql-number">1.0</span>/<span class="sql-number">3.0</span>, <span class="sql-number">1.0</span>/<span class="sql-number">3.0</span>);
+
+<span class="sql-comment">-- See the difference</span>
+<span class="sql-keyword">SELECT</span> 
+    TestValue,
+    AsDecimal,
+    AsFloat,
+    <span class="sql-keyword">CASE WHEN</span> AsDecimal = <span class="sql-number">0.3</span> <span class="sql-keyword">THEN</span> <span class="sql-string">'Equal'</span> <span class="sql-keyword">ELSE</span> <span class="sql-string">'Not Equal'</span> <span class="sql-keyword">END</span> <span class="sql-keyword">AS</span> DecimalTest,
+    <span class="sql-keyword">CASE WHEN</span> AsFloat = <span class="sql-number">0.3</span> <span class="sql-keyword">THEN</span> <span class="sql-string">'Equal'</span> <span class="sql-keyword">ELSE</span> <span class="sql-string">'Not Equal'</span> <span class="sql-keyword">END</span> <span class="sql-keyword">AS</span> FloatTest
+<span class="sql-keyword">FROM</span> NumberComparison;
+
+<span class="sql-comment">/* Results will show:
+   DECIMAL: 0.1 + 0.2 = exactly 0.3 ✅
+   FLOAT: 0.1 + 0.2 = approximately 0.30000000000000004 ❌
+*/</span>
+            </div>
+        </div>
+
+        <h2>🎓 Common Patterns and Best Practices</h2>
+
+        <div class="success-box">
+            <h3><span class="emoji">✅</span> Recommended DECIMAL Patterns for Common Scenarios</h3>
+            
+            <div style="margin-top: 20px;">
+                <p><strong>Currency and Money:</strong></p>
+                <div class="code-block">
+<span class="sql-comment">-- Most currencies need 2 decimal places</span>
+Price <span class="sql-type">DECIMAL</span>(<span class="sql-number">19</span>, <span class="sql-number">2</span>)  <span class="sql-comment">-- Up to 99 quadrillion with cents</span>
+
+<span class="sql-comment">-- For very large financial systems</span>
+AccountBalance <span class="sql-type">DECIMAL</span>(<span class="sql-number">19</span>, <span class="sql-number">4</span>)  <span class="sql-comment">-- Extra precision for institutional banking</span>
+
+<span class="sql-comment">-- For cryptocurrency (varies by currency)</span>
+BitcoinAmount <span class="sql-type">DECIMAL</span>(<span class="sql-number">18</span>, <span class="sql-number">8</span>)  <span class="sql-comment">-- Bitcoin uses 8 decimal places (satoshis)</span>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <p><strong>Percentages and Rates:</strong></p>
+                <div class="code-block">
+<span class="sql-comment">-- Tax rates, interest rates (stored as decimal, not percentage)</span>
+TaxRate <span class="sql-type">DECIMAL</span>(<span class="sql-number">6</span>, <span class="sql-number">4</span>)  <span class="sql-comment">-- 0.0825 = 8.25%</span>
+
+<span class="sql-comment">-- Discount percentages</span>
+DiscountPercent <span class="sql-type">DECIMAL</span>(<span class="sql-number">5</span>, <span class="sql-number">2</span>)  <span class="sql-comment">-- 0.00 to 100.00</span>
+
+<span class="sql-comment">-- Growth rates with high precision</span>
+GrowthRate <span class="sql-type">DECIMAL</span>(<span class="sql-number">8</span>, <span class="sql-number">6</span>)  <span class="sql-comment">-- Very precise rates like 1.052345</span>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <p><strong>Measurements and Quantities:</strong></p>
+                <div class="code-block">
+<span class="sql-comment">-- Weight in kilograms or pounds</span>
+WeightKg <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>, <span class="sql-number">3</span>)  <span class="sql-comment">-- Up to 9,999,999.999 kg</span>
+
+<span class="sql-comment">-- Distance in meters with millimeter precision</span>
+DistanceMeters <span class="sql-type">DECIMAL</span>(<span class="sql-number">12</span>, <span class="sql-number">3</span>)
+
+<span class="sql-comment">-- Exact item counts (no decimals)</span>
+Quantity <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>, <span class="sql-number">0</span>)  <span class="sql-comment">-- Or just use INT</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-box">
+            <h3><span class="emoji">💡</span> Performance Tips</h3>
+            <p><strong>Right-size your precision:</strong> Do not just default to DECIMAL(18,2) everywhere. If you only need 10 digits total, use DECIMAL(10,2) to save storage and improve performance.</p>
+            
+            <p style="margin-top: 15px;"><strong>Index considerations:</strong> DECIMAL columns can be indexed just like other types. Smaller precision means smaller index size and faster seeks.</p>
+            
+            <p style="margin-top: 15px;"><strong>Comparison operations:</strong> Comparing DECIMALs is slower than comparing INTs but faster than comparing strings. For frequently compared columns, consider if INT could work instead.</p>
+            
+            <p style="margin-top: 15px;"><strong>Aggregations:</strong> SUM, AVG, and other aggregate functions on DECIMAL columns maintain precision but can be slower than on INT columns. This is the price of exactness.</p>
+        </div>
+
+        <h2>⚠️ Common Pitfalls and How to Avoid Them</h2>
+
+        <div class="warning-box">
+            <h3><span class="emoji">❌</span> Pitfall 1: Truncation Instead of Rounding</h3>
+            <p>When you insert a value that has more decimal places than your scale allows, SQL Server truncates (not rounds) by default in some contexts.</p>
+            
+            <div class="code-block" style="margin-top: 15px;">
+<span class="sql-keyword">DECLARE</span> <span class="sql-type">@price</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>, <span class="sql-number">2</span>);
+<span class="sql-keyword">SET</span> <span class="sql-type">@price</span> = <span class="sql-number">19.999</span>;  <span class="sql-comment">-- What happens?</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-type">@price</span>;  <span class="sql-comment">-- Result: 20.00 (rounded in this case)</span>
+
+<span class="sql-comment">-- But in calculations:</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-keyword">CAST</span>(<span class="sql-number">19.999</span> <span class="sql-keyword">AS</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>,<span class="sql-number">2</span>));  <span class="sql-comment">-- Result: 20.00 (rounded)</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-number">19.999</span> / <span class="sql-number">1.000</span>;  <span class="sql-comment">-- Retains full precision in intermediate calculation</span>
+
+<span class="sql-comment">-- Be explicit with ROUND() function when you need it</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-keyword">ROUND</span>(<span class="sql-number">19.999</span>, <span class="sql-number">2</span>);  <span class="sql-comment">-- Result: 20.00</span>
+            </div>
+        </div>
+
+        <div class="warning-box">
+            <h3><span class="emoji">❌</span> Pitfall 2: Arithmetic Overflow</h3>
+            <p>When you multiply or divide DECIMAL values, the result might need more precision than either operand. SQL Server has rules for calculating the resulting precision and scale, and sometimes this can cause overflow errors.</p>
+            
+            <div class="code-block" style="margin-top: 15px;">
+<span class="sql-comment">-- This might overflow depending on the values</span>
+<span class="sql-keyword">DECLARE</span> <span class="sql-type">@a</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">38</span>, <span class="sql-number">10</span>) = <span class="sql-number">9999999999999999999999999999.9999999999</span>;
+<span class="sql-keyword">DECLARE</span> <span class="sql-type">@b</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">38</span>, <span class="sql-number">10</span>) = <span class="sql-number">1.1</span>;
+<span class="sql-keyword">SELECT</span> <span class="sql-type">@a</span> * <span class="sql-type">@b</span>;  <span class="sql-comment">-- Error! Arithmetic overflow</span>
+
+<span class="sql-comment">-- Solution: Cast to a precision that can hold the result</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-keyword">CAST</span>(<span class="sql-type">@a</span> <span class="sql-keyword">AS</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">38</span>, <span class="sql-number">5</span>)) * <span class="sql-keyword">CAST</span>(<span class="sql-type">@b</span> <span class="sql-keyword">AS</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">38</span>, <span class="sql-number">5</span>));
+            </div>
+        </div>
+
+        <div class="warning-box">
+            <h3><span class="emoji">❌</span> Pitfall 3: Implicit Conversions</h3>
+            <p>When you mix DECIMAL with other numeric types, SQL Server does implicit conversion which might not always give you the precision you expect.</p>
+            
+            <div class="code-block" style="margin-top: 15px;">
+<span class="sql-comment">-- Be careful mixing DECIMAL with INT</span>
+<span class="sql-keyword">DECLARE</span> <span class="sql-type">@decimal_val</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>, <span class="sql-number">2</span>) = <span class="sql-number">10.50</span>;
+<span class="sql-keyword">DECLARE</span> <span class="sql-type">@int_val</span> <span class="sql-type">INT</span> = <span class="sql-number">3</span>;
+
+<span class="sql-comment">-- Division by INT can give unexpected results</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-type">@decimal_val</span> / <span class="sql-type">@int_val</span>;  <span class="sql-comment">-- Result: 3.50 (good)</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-type">@int_val</span> / <span class="sql-type">@decimal_val</span>;  <span class="sql-comment">-- Result: 0.28 (precision from decimal)</span>
+
+<span class="sql-comment">-- Always be explicit with your conversions</span>
+<span class="sql-keyword">SELECT</span> <span class="sql-keyword">CAST</span>(<span class="sql-type">@int_val</span> <span class="sql-keyword">AS</span> <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>,<span class="sql-number">2</span>)) / <span class="sql-type">@decimal_val</span>;
+            </div>
+        </div>
+
+        <h2>📋 Quick Reference Cheat Sheet</h2>
+
+        <div class="example-section">
+            <div class="example-title">Common DECIMAL Declarations</div>
+            <div class="code-block">
+<span class="sql-comment">-- MONEY AND CURRENCY</span>
+Price <span class="sql-type">DECIMAL</span>(<span class="sql-number">19</span>, <span class="sql-number">2</span>)           <span class="sql-comment">-- Standard money with cents</span>
+Salary <span class="sql-type">DECIMAL</span>(<span class="sql-number">12</span>, <span class="sql-number">2</span>)          <span class="sql-comment">-- Employee salaries</span>
+BankBalance <span class="sql-type">DECIMAL</span>(<span class="sql-number">18</span>, <span class="sql-number">2</span>)     <span class="sql-comment">-- Account balances</span>
+
+<span class="sql-comment">-- RATES AND PERCENTAGES</span>
+TaxRate <span class="sql-type">DECIMAL</span>(<span class="sql-number">6</span>, <span class="sql-number">4</span>)           <span class="sql-comment">-- 0.0000 to 99.9999 (0% to 9999.99%)</span>
+InterestRate <span class="sql-type">DECIMAL</span>(<span class="sql-number">5</span>, <span class="sql-number">4</span>)     <span class="sql-comment">-- 0.0000 to 9.9999 (0% to 999.99%)</span>
+DiscountPct <span class="sql-type">DECIMAL</span>(<span class="sql-number">5</span>, <span class="sql-number">2</span>)      <span class="sql-comment">-- 0.00 to 999.99 (discount percentages)</span>
+
+<span class="sql-comment">-- MEASUREMENTS</span>
+WeightKg <span class="sql-type">DECIMAL</span>(<span class="sql-number">10</span>, <span class="sql-number">3</span>)         <span class="sql-comment">-- Weight in kilograms to grams</span>
+DistanceKm <span class="sql-type">DECIMAL</span>(<span class="sql-number">12</span>, <span class="sql-number">2</span>)       <span class="sql-comment">-- Distance in kilometers</span>
+Temperature <span class="sql-type">DECIMAL</span>(<span class="sql-number">5</span>, <span class="sql-number">2</span>)      <span class="sql-comment">-- -999.99 to 999.99 degrees</span>
+
+<span class="sql-comment">-- BUSINESS METRICS</span>
+Rating <span class="sql-type">DECIMAL</span>(<span class="sql-number">3</span>, <span class="sql-number">2</span>)            <span class="sql-comment">-- 0.00 to 5.00 (star ratings)</span>
+Probability <span class="sql-type">DECIMAL</span>(<span class="sql-number">5</span>, <span class="sql-number">4</span>)      <span class="sql-comment">-- 0.0000 to 1.0000 (probabilities)</span>
+Quantity <span class="sql-type">DECIMAL</span>(<span class="sql-number">18</span>, <span class="sql-number">0</span>)         <span class="sql-comment">-- Integer quantities (or use BIGINT)</span>
+            </div>
+        </div>
+
+        <h2>🎯 Decision Tree: Choosing the Right Type</h2>
+
+        <div class="visual-range">
+            <h3 style="margin-bottom: 20px;">Follow This Decision Process:</h3>
+            
+            <div style="padding: 20px; background: white; border-radius: 8px; border-left: 5px solid #2196f3; margin: 15px 0;">
+                <p style="font-weight: bold; color: #1e3c72;">Question 1: Do you need decimal places?</p>
+                <p style="margin-left: 20px; margin-top: 10px;">➜ <strong>NO</strong> → Use INT, BIGINT, or SMALLINT (faster, less storage)</p>
+                <p style="margin-left: 20px; margin-top: 5px;">➜ <strong>YES</strong> → Continue to Question 2</p>
+            </div>
+
+            <div style="padding: 20px; background: white; border-radius: 8px; border-left: 5px solid #2196f3; margin: 15px 0;">
+                <p style="font-weight: bold; color: #1e3c72;">Question 2: Is it financial/monetary data?</p>
+                <p style="margin-left: 20px; margin-top: 10px;">➜ <strong>YES</strong> → Use DECIMAL (exact arithmetic required)</p>
+                <p style="margin-left: 20px; margin-top: 5px;">➜ <strong>NO</strong> → Continue to Question 3</p>
+            </div>
+
+            <div style="padding: 20px; background: white; border-radius: 8px; border-left: 5px solid #2196f3; margin: 15px 0;">
+                <p style="font-weight: bold; color: #1e3c72;">Question 3: Do you need extremely large range (like scientific notation)?</p>
+                <p style="margin-left: 20px; margin-top: 10px;">➜ <strong>YES</strong> → Use FLOAT (range more important than precision)</p>
+                <p style="margin-left: 20px; margin-top: 5px;">➜ <strong>NO</strong> → Use DECIMAL (exact representation)</p>
+            </div>
+
+            <div style="padding: 20px; background: white; border-radius: 8px; border-left: 5px solid #2196f3; margin: 15px 0;">
+                <p style="font-weight: bold; color: #1e3c72;">Question 4: What precision do you need for DECIMAL?</p>
+                <p style="margin-left: 20px; margin-top: 10px;">➜ <strong>Money:</strong> DECIMAL(19, 2) or DECIMAL(19, 4)</p>
+                <p style="margin-left: 20px; margin-top: 5px;">➜ <strong>Rates:</strong> DECIMAL(6, 4) or DECIMAL(5, 4)</p>
+                <p style="margin-left: 20px; margin-top: 5px;">➜ <strong>Measurements:</strong> DECIMAL(10, 3) or DECIMAL(12, 2)</p>
+                <p style="margin-left: 20px; margin-top: 5px;">➜ <strong>Custom:</strong> Calculate based on max value and needed decimal places</p>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 50px; padding: 30px; background: linear-gradient(135deg, #1e3c7215 0%, #2a529815 100%); border-radius: 15px; border: 3px solid #1e3c72;">
+            <p style="font-size: 1.4em; color: #1e3c72; font-weight: bold; margin-bottom: 15px;">You now understand SQL Server numeric types! 🎉</p>
+            <p style="font-size: 1.1em; color: #666; margin-bottom: 10px;">Remember: DECIMAL and NUMERIC are your friends for financial data.</p>
+            <p style="color: #666;">Choose the right precision and scale for your needs, and your data will be exact, performant, and storage-efficient.</p>
+        </div>
+    </div>
+</body>
+</html>

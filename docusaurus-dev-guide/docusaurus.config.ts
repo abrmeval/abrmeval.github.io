@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: 'Dev Guide',
+  title: 'Dev Reference Guide',
   tagline: 'Personal reference for .NET, ASP.NET Core, Azure, and more',
   favicon: 'img/favicon.ico',
 
@@ -67,30 +67,39 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Dev Guide',
+      title: 'Dev Reference Guide',
       logo: {
-        alt: 'Dev Guide Logo',
+        alt: 'Dev Reference Guide Logo',
         src: 'img/logo.svg',
       },
       items: [
         {
-          to: '/docs/aspnet-core/aspnetcore-testing-guide',
-          label: 'ASP.NET Core',
+          type: 'dropdown',
+          label: '.NET',
+          position: 'left',
+          items: [
+            { to: '/docs/aspnet-core/aspnetcore-testing-guide', label: 'ASP.NET Core' },
+            { to: '/docs/csharp-fundamentals/floating-point-precision-guide', label: 'C# Fundamentals' },
+            { to: '/docs/dotnet-interview/', label: '.NET Interview Prep' },
+          ],
+        },
+        {
+          type: 'dropdown',
+          label: 'Azure',
+          position: 'left',
+          items: [
+            { to: '/docs/azure-functions/azure-functions-workers-guide', label: 'Azure Functions' },
+            { to: '/docs/azure-platform/azure-naming-convention', label: 'Azure Platform' },
+          ],
+        },
+        {
+          to: '/docs/sql-server/sql-server-numeric-types-guide',
+          label: 'SQL Server',
           position: 'left',
         },
         {
-          to: '/docs/azure-functions/azure-functions-workers-guide',
-          label: 'Azure Functions',
-          position: 'left',
-        },
-        {
-          to: '/docs/azure-platform/azure-naming-convention',
-          label: 'Azure Platform',
-          position: 'left',
-        },
-        {
-          to: '/docs/dotnet-interview/',
-          label: '.NET Interview',
+          to: '/docs/javascript/javascript-prototypes-guide',
+          label: 'JavaScript',
           position: 'left',
         },
         {
@@ -113,7 +122,9 @@ const config: Config = {
           items: [
             { label: 'Testing Guide', to: '/docs/aspnet-core/aspnetcore-testing-guide' },
             { label: 'Custom Middleware', to: '/docs/aspnet-core/custom-middleware-guide' },
-            { label: 'Global Validation', to: '/docs/aspnet-core/global-validation-handler-guide' },
+            { label: 'HTTP Request Pipeline', to: '/docs/aspnet-core/aspnet-http-request-pipeline' },
+            { label: 'Authentication Guide P1', to: '/docs/aspnet-core/aspnetcore-authentication-guide-p1' },
+            { label: 'Model Binding Guide', to: '/docs/aspnet-core/aspnetcore-model-binding-guide' },
           ],
         },
         {
@@ -122,12 +133,26 @@ const config: Config = {
             { label: 'Azure Functions Workers', to: '/docs/azure-functions/azure-functions-workers-guide' },
             { label: 'Azure Naming Convention', to: '/docs/azure-platform/azure-naming-convention' },
             { label: 'OIDC Federation', to: '/docs/azure-platform/azure-oidc-federation' },
+            { label: 'JWT + Key Vault Auth', to: '/docs/azure-platform/jwt-keyvault-auth' },
+            { label: 'OAuth 2.0 vs OpenID Connect', to: '/docs/azure-platform/oauth-openid-connect-guide' },
+          ],
+        },
+        {
+          title: 'C# & .NET',
+          items: [
+            { label: 'Floating-Point Precision', to: '/docs/csharp-fundamentals/floating-point-precision-guide' },
+            { label: 'SOLID Principles', to: '/docs/csharp-fundamentals/solid-principles-csharp' },
+            { label: 'Architectural Styles & Patterns', to: '/docs/csharp-fundamentals/architectural-styles-design-patterns' },
+            { label: '.NET Interview Prep', to: '/docs/dotnet-interview/' },
           ],
         },
         {
           title: 'More',
           items: [
-            { label: '.NET Interview Prep', to: '/docs/dotnet-interview/' },
+            { label: 'SQL Server Numeric Types', to: '/docs/sql-server/sql-server-numeric-types-guide' },
+            { label: 'T-SQL Joins', to: '/docs/sql-server/tsql-joins-guide' },
+            { label: 'JavaScript Prototypes', to: '/docs/javascript/javascript-prototypes-guide' },
+            { label: 'Linux Cheatsheet', to: '/docs/cheatsheets/linux-dev-cheatsheet' },
             { label: 'GitHub', href: 'https://github.com/abrmeval/abrmeval.github.io' },
           ],
         },
