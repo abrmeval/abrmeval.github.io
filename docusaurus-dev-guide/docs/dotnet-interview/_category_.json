@@ -1,0 +1,8 @@
+{
+  "label": ".NET Interview Prep",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Interview preparation guides for .NET, C#, cloud-native, and enterprise architecture topics."
+  }
+}
