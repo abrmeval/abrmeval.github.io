@@ -13,7 +13,7 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://your-site.netlify.app', // Update with actual deployment URL
+  url: 'https://abrmeval-github-io.vercel.app', // Update with actual deployment URL
   baseUrl: '/',
 
   organizationName: 'abrmeval',
