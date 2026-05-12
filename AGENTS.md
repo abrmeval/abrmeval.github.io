@@ -8,7 +8,7 @@ This is a **Docusaurus 3.9.2 static documentation site** — a personal develope
 guide covering .NET/C#, ASP.NET Core, Azure, SQL Server, and JavaScript. It is deployed
 to Vercel. All site source lives under `docusaurus-dev-guide/`.
 
-```
+```text
 abrmeval.github.io/
 ├── docusaurus-dev-guide/   ← entire website (work here)
 │   ├── docs/               ← markdown/MDX content
