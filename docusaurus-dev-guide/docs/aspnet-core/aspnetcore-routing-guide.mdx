@@ -1,0 +1,316 @@
+---
+title: "Routing in ASP.NET Core"
+sidebar_label: "Routing Guide"
+sidebar_position: 12
+tags: [aspnet, routing, middleware, endpoints]
+---
+
+Routing is responsible for **matching incoming HTTP requests** and dispatching them to the app's executable **endpoints**. It is one of the most fundamental concepts in ASP.NET Core — everything from controllers to Razor Pages to minimal APIs is built on top of it.
+
+## What is an Endpoint?
+
+An **endpoint** is the unit of executable request-handling code. Every endpoint has:
+
+- A **`RequestDelegate`** — the code that runs when the endpoint is matched.
+- A **`Metadata` collection** — arbitrary data attached to the endpoint (used by auth, CORS, etc.).
+- An optional **route pattern** — how URLs map to this endpoint.
+
+```csharp
+// The simplest possible endpoint
+app.MapGet("/", () => "Hello World!");
+```
+
+When a `GET /` request arrives, the delegate runs and returns `"Hello World!"`. Any other method or path returns `404`.
+
+---
+
+## Routing Basics
+
+Routing is wired up automatically by `WebApplicationBuilder`. Under the hood it uses two middleware:
+
+| Middleware | What it does |
+|---|---|
+| `UseRouting` | Inspects the request and **selects** the best matching endpoint |
+| `UseEndpoints` | **Executes** the selected endpoint's delegate |
+
+You rarely call these explicitly — but understanding their position in the pipeline matters a lot.
+
+```csharp
+// Explicit positioning example
+app.Use(async (context, next) =>
+{
+    // Runs BEFORE routing — endpoint is always null here
+    await next(context);
+});
+
+app.UseRouting(); // <-- route selection happens here
+
+app.Use(async (context, next) =>
+{
+    // Runs AFTER routing — endpoint is now set if a match was found
+    var ep = context.GetEndpoint(); // non-null if matched
+    await next(context);
+});
+
+app.MapGet("/", () => "Hello World!");
+```
+
+> **Key rule:** `context.GetEndpoint()` returns `null` before `UseRouting` and is populated after it. Middleware that needs to know which endpoint was selected (e.g., authorization) must run *between* `UseRouting` and `UseEndpoints`.
+
+---
+
+## Route Templates
+
+A **route template** is the pattern string that describes which URLs an endpoint matches.
+
+```csharp
+app.MapGet("/hello/{name:alpha}", (string name) => $"Hello {name}!");
+// Matches: /hello/Alice  → name = "Alice"
+// No match: /hello/123   (fails :alpha constraint)
+```
+
+### Template Syntax
+
+| Syntax | Meaning | Example |
+|---|---|---|
+| `{param}` | Required route parameter | `/products/{id}` |
+| `{param?}` | Optional parameter | `/products/{id?}` |
+| `{param=default}` | Default value | `{controller=Home}` |
+| `{param:constraint}` | Inline constraint | `{id:int}` |
+| `{**slug}` | Catch-all (greedy) | `/files/{**path}` |
+| `{*slug}` | Catch-all (encodes `/`) | `/files/{*path}` |
+
+### Default Values and Optional Parameters
+
+```csharp
+// Default value — always produces a value
+app.MapGet("/{controller=Home}/{action=Index}/{id?}", ...);
+// GET /            → controller=Home, action=Index
+// GET /Products    → controller=Products, action=Index
+// GET /Products/Details/5 → controller=Products, action=Details, id=5
+```
+
+The difference:
+- **Default value** (`{x=foo}`) — always produces a value, even if absent from the URL.
+- **Optional** (`{x?}`) — only has a value when present in the URL.
+
+### Catch-All Parameters
+
+```csharp
+app.MapGet("/files/{**path}", (string path) => $"File: {path}");
+// GET /files/docs/readme.txt → path = "docs/readme.txt"
+```
+
+Use `**` (double asterisk) when you want path separators (`/`) to be passed through literally. Single `*` will percent-encode them.
+
+---
+
+## Route Constraints
+
+Constraints **disambiguate** routes — they do NOT validate user input. If a constraint fails, the result is `404`, not `400`.
+
+```csharp
+app.MapGet("/users/{id:int}", (int id) => $"User {id}");
+// Matches: /users/42
+// No match: /users/abc  → falls through to next route or 404
+```
+
+### Common Constraints Reference
+
+| Constraint | Example | Matches |
+|---|---|---|
+| `int` | `{id:int}` | `123`, `-5` |
+| `long` | `{ticks:long}` | `9876543210` |
+| `bool` | `{active:bool}` | `true`, `FALSE` |
+| `datetime` | `{dob:datetime}` | `2024-01-31` |
+| `decimal` | `{price:decimal}` | `9.99` |
+| `guid` | `{id:guid}` | `a1b2c3d4-...` |
+| `alpha` | `{name:alpha}` | `Rick` (letters only) |
+| `minlength(n)` | `{user:minlength(4)}` | At least 4 chars |
+| `maxlength(n)` | `{file:maxlength(8)}` | At most 8 chars |
+| `length(n)` | `{code:length(5)}` | Exactly 5 chars |
+| `length(min,max)` | `{slug:length(3,20)}` | Between 3 and 20 |
+| `min(n)` | `{age:min(18)}` | Integer ≥ 18 |
+| `max(n)` | `{age:max(120)}` | Integer ≤ 120 |
+| `range(min,max)` | `{age:range(18,120)}` | 18 ≤ value ≤ 120 |
+| `regex(expr)` | `{ssn:regex(^\\d{{3}}-\\d{{2}}-\\d{{4}}$)}` | Matches regex |
+| `required` | `{name:required}` | Non-empty during link generation |
+
+Multiple constraints can be chained: `{id:int:min(1)}`.
+
+> **Warning:** Do not use route constraints for input validation. Use model validation for that. Constraints are only for route *disambiguation*.
+
+---
+
+## HTTP Method Mapping
+
+Use the `Map*` family of methods to restrict an endpoint to a specific HTTP verb:
+
+```csharp
+app.MapGet("/products", () => "List all products");
+app.MapPost("/products", () => "Create a product");
+app.MapPut("/products/{id:int}", (int id) => $"Update product {id}");
+app.MapDelete("/products/{id:int}", (int id) => $"Delete product {id}");
+
+// Match any HTTP method
+app.MapMethods("/upload", new[] { "POST", "PUT" }, () => "Upload");
+```
+
+Framework integrations use the same system:
+
+```csharp
+app.MapControllers();        // MVC controllers
+app.MapRazorPages();         // Razor Pages
+app.MapHub<ChatHub>("/hub"); // SignalR
+```
+
+---
+
+## Endpoint Metadata
+
+Endpoints can carry **metadata** — arbitrary .NET objects attached at registration time. Middleware running after `UseRouting` can inspect this metadata to make decisions.
+
+```csharp
+// Attach built-in metadata
+app.MapHealthChecks("/healthz").RequireAuthorization();
+app.MapGet("/admin", () => "Admin only").RequireAuthorization("AdminPolicy");
+
+// Attach custom metadata
+app.MapGet("/sensitive", () => "Secret data")
+   .WithMetadata(new RequiresAuditAttribute());
+```
+
+```csharp
+// Middleware that reacts to custom metadata
+app.Use(async (context, next) =>
+{
+    if (context.GetEndpoint()?.Metadata.GetMetadata<RequiresAuditAttribute>() is not null)
+    {
+        Console.WriteLine($"Sensitive access at {DateTime.UtcNow}");
+    }
+    await next(context);
+});
+
+public class RequiresAuditAttribute : Attribute { }
+```
+
+This is how `[Authorize]`, `[AllowAnonymous]`, `[EnableCors]`, etc. work under the hood — they are all metadata attached to endpoints.
+
+---
+
+## Route Precedence (Specificity)
+
+When multiple routes could match a URL, routing selects the **most specific** one automatically. You rarely need to set order manually.
+
+**Specificity rules (most → least specific):**
+
+1. Literal segments: `/products/list`
+2. Parameters with constraints: `{id:int}`
+3. Parameters without constraints: `{id}`
+4. Catch-all parameters: `{**rest}`
+
+```csharp
+app.MapGet("/products/list", () => "Literal match");   // wins for /products/list
+app.MapGet("/products/{id:int}", (int id) => id);      // wins for /products/42
+app.MapGet("/products/{slug}", (string slug) => slug); // wins for /products/sale
+```
+
+If two routes have identical precedence and both match, an **ambiguous match exception** is thrown at runtime.
+
+---
+
+## URL Generation with `LinkGenerator`
+
+Routing can also work in reverse — generating URLs from route values. Use `LinkGenerator` (injected via DI) to create links anywhere in your app, not just inside request handlers.
+
+```csharp
+public class ProductsMiddleware
+{
+    private readonly LinkGenerator _linkGenerator;
+
+    public ProductsMiddleware(RequestDelegate next, LinkGenerator linkGenerator)
+        => _linkGenerator = linkGenerator;
+
+    public async Task InvokeAsync(HttpContext httpContext)
+    {
+        // Generates the path for the "Products" action on "StoreController"
+        var path = _linkGenerator.GetPathByAction("Products", "Store");
+        await httpContext.Response.WriteAsync($"Products are at: {path}");
+    }
+}
+```
+
+In controllers and Razor Pages, `Url.Action(...)` and `Url.Page(...)` use `LinkGenerator` internally.
+
+> **Security note:** `GetUri*` methods include the scheme and host. Always validate the `Host` header of incoming requests before using them to build URIs.
+
+---
+
+## Middleware Pipeline Order — The Most Important Rule
+
+The order in which middleware is registered determines behavior. For routing, the canonical order is:
+
+```csharp
+// 1. Pre-routing middleware (URL rewriting, host filtering, etc.)
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+// 2. Route matching — selects endpoint, sets context.GetEndpoint()
+app.UseRouting();
+
+// 3. Auth middleware — must run AFTER UseRouting so it knows the endpoint
+app.UseAuthentication();
+app.UseAuthorization();
+
+// 4. Your endpoints — controllers, Razor Pages, minimal API routes
+app.MapControllers();
+app.MapRazorPages();
+app.MapGet("/hello", () => "Hello!");
+
+// UseEndpoints is implicit in modern apps — no need to call it
+```
+
+**Why this order matters:**
+- `UseAuthentication` / `UseAuthorization` run between `UseRouting` and the endpoint execution so they can read endpoint metadata (e.g., `[Authorize]` attributes) before deciding whether to allow the request.
+- Middleware before `UseRouting` cannot see which endpoint was selected.
+
+---
+
+## Terminal Middleware vs. Routing
+
+**Terminal middleware** short-circuits the pipeline based on its own matching logic:
+
+```csharp
+// Terminal middleware approach (manual, no metadata support)
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/legacy")
+    {
+        await context.Response.WriteAsync("Legacy response");
+        return; // terminates pipeline
+    }
+    await next(context);
+});
+
+// Routing approach (integrates with auth, CORS, metadata, etc.)
+app.MapGet("/modern", () => "Modern response");
+```
+
+Prefer **routing over terminal middleware** because:
+- Routing integrates automatically with `UseAuthorization`, `UseCors`, etc.
+- Route constraints, metadata, and URL generation are only available through routing.
+- Terminal middleware requires manual wiring to cross-cutting concerns.
+
+---
+
+## Quick Reference: Route Template Examples
+
+| Template | Matches | Notes |
+|---|---|---|
+| `/hello` | `/hello` | Exact literal match |
+| `/{page=Home}` | `/`, `/About` | Default value |
+| `/{controller}/{action}/{id?}` | `/Products/Edit/5` | MVC style |
+| `/files/{**path}` | `/files/a/b/c.txt` | Catch-all with `/` |
+| `/hello/{name:alpha}` | `/hello/Alice` | Letters only |
+| `/items/{id:int:min(1)}` | `/items/3` | Chained constraints |
+| `/report/{year:int}/{month:range(1,12)}` | `/report/2024/6` | Multiple constraints |
