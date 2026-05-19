@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Linux Commands Cheatsheet"
 sidebar_label: "Linux Commands"
 sidebar_position: 1
@@ -69,6 +69,15 @@ mv file.txt /tmp/          # Move to different location
 touch newfile.txt          # Create empty file
 touch -t 202310201430 file.txt  # Set specific timestamp
 ```
+
+### which
+**Locate a Command** - Shows the full path of a command's executable
+```bash
+which node                 # Output: /usr/bin/node
+which python3              # Locate Python 3 interpreter
+which -a git               # List all matching executables in PATH
+```
+Use `which` to confirm which version of a tool is actually being invoked, especially when multiple versions are installed.
 
 ## File Content & Text Processing
 
@@ -560,6 +569,383 @@ function deploy() {
 deploy "server.example.com"
 ```
 
+### Variable Naming Conventions
+Bash has no enforced naming rules, but following conventions makes scripts readable and maintainable.
+
+| Scope | Convention | Example |
+|---|---|---|
+| Local variable | `snake_case` | `file_count`, `user_name` |
+| Environment / exported | `UPPER_SNAKE_CASE` | `DATABASE_URL`, `NODE_ENV` |
+| Constants (readonly) | `UPPER_SNAKE_CASE` | `readonly MAX_RETRIES=3` |
+| Loop variables | Short `snake_case` | `file`, `line`, `item` |
+| Private / internal | Leading underscore | `_tmp_dir` |
+
+```bash
+# Good: clear, consistent naming
+readonly MAX_RETRIES=3
+output_dir="/tmp/results"
+user_input=""
+
+# Declare local variables inside functions to avoid polluting global scope
+function process_file() {
+    local file_path="$1"       # local prevents leaking into global scope
+    local line_count
+    line_count=$(wc -l < "$file_path")
+    echo "Lines: $line_count"
+}
+
+# Environment variables are UPPER_SNAKE_CASE
+export APP_ENV="production"
+export DB_HOST="localhost"
+```
+
+- Always **quote variables**: `"$var"` prevents word-splitting on values with spaces.
+- Prefer `local` inside functions to limit scope.
+- Use `readonly` for values that must not change after assignment.
+
+### Reading User Input
+```bash
+# Basic prompt
+read -p "Enter your name: " user_name
+echo "Hello, $user_name"
+
+# Silent input (e.g. passwords)
+read -s -p "Password: " password
+echo ""  # newline after silent input
+
+# With a timeout (5 seconds)
+read -t 5 -p "Continue? [y/n]: " answer || answer="n"
+
+# Read multiple values at once
+read -p "Enter first and last name: " first_name last_name
+echo "First: $first_name, Last: $last_name"
+
+# Validate input
+read -p "Enter a number: " num
+if ! [[ "$num" =~ ^[0-9]+$ ]]; then
+    echo "Error: not a number" >&2
+    exit 1
+fi
+```
+
+### Reading from a File
+```bash
+# Read line by line (recommended — handles spaces correctly)
+while IFS= read -r line; do
+    echo "Line: $line"
+done < input.txt
+
+# IFS=  : preserves leading/trailing whitespace
+# -r    : disables backslash interpretation
+
+# Read file into an array
+mapfile -t lines < input.txt
+echo "Total lines: ${#lines[@]}"
+echo "First line: ${lines[0]}"
+
+# Process CSV (split on comma)
+while IFS=',' read -r name age city; do
+    echo "Name=$name Age=$age City=$city"
+done < data.csv
+
+# Skip the header line of a file
+tail -n +2 data.csv | while IFS=',' read -r name age city; do
+    echo "$name is $age years old"
+done
+```
+
+### Command Line Arguments
+```bash
+#!/bin/bash
+# $0  : script name
+# $1..$N : positional arguments
+# $#  : number of arguments
+# $@  : all arguments as separate words
+# $*  : all arguments as a single string
+
+echo "Script: $0"
+echo "First arg: $1"
+echo "All args: $@"
+echo "Arg count: $#"
+
+# Guard: require at least one argument
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <environment> [--dry-run]" >&2
+    exit 1
+fi
+
+# Named flags with getopts (built-in)
+while getopts ":e:v" opt; do
+    case $opt in
+        e) environment="$OPTARG" ;;  # -e production
+        v) verbose=true ;;           # -v flag
+        :) echo "Option -$OPTARG requires an argument." >&2; exit 1 ;;
+        \?) echo "Unknown option: -$OPTARG" >&2; exit 1 ;;
+    esac
+done
+
+# Shift past the parsed options to access remaining args
+shift $((OPTIND - 1))
+```
+
+### Case Statements
+**`case`** is the idiomatic Bash way to branch on a string value — cleaner than a chain of `elif`.
+
+```bash
+#!/bin/bash
+day=$(date +%A)
+
+case "$day" in
+    Monday|Tuesday|Wednesday|Thursday|Friday)
+        echo "Weekday"
+        ;;
+    Saturday|Sunday)
+        echo "Weekend"
+        ;;
+    *)
+        echo "Unknown day: $day"
+        ;;
+esac
+```
+
+**Practical example — dispatch on a CLI argument:**
+```bash
+#!/bin/bash
+command="$1"
+
+case "$command" in
+    start)
+        echo "Starting service..."
+        systemctl start myapp
+        ;;
+    stop)
+        echo "Stopping service..."
+        systemctl stop myapp
+        ;;
+    restart)
+        systemctl restart myapp
+        ;;
+    status)
+        systemctl status myapp
+        ;;
+    "")
+        echo "Usage: $0 {start|stop|restart|status}" >&2
+        exit 1
+        ;;
+    *)
+        echo "Unknown command: $command" >&2
+        exit 1
+        ;;
+esac
+```
+
+- Each pattern ends with `)`.
+- `;;` terminates each branch (like `break` in C `switch`).
+- `|` separates multiple patterns in one branch.
+- `*)` is the catch-all default.
+
+## Scheduling Scripts with Cron
+
+**Cron** is the standard Unix job scheduler. It runs commands or scripts automatically on a defined schedule.
+
+### Cron Syntax
+```
+┌───────────── minute        (0–59)
+│ ┌─────────── hour          (0–23)
+│ │ ┌───────── day of month  (1–31)
+│ │ │ ┌─────── month         (1–12 or JAN–DEC)
+│ │ │ │ ┌───── day of week   (0–7, 0 and 7 = Sunday, or SUN–SAT)
+│ │ │ │ │
+* * * * *  command_to_run
+```
+
+**Common schedule examples:**
+```bash
+# Every minute
+* * * * * /path/to/script.sh
+
+# Every day at 2:30 AM
+30 2 * * * /path/to/backup.sh
+
+# Every Monday at midnight
+0 0 * * 1 /path/to/weekly-report.sh
+
+# Every 15 minutes
+*/15 * * * * /path/to/health-check.sh
+
+# First day of every month at 6 AM
+0 6 1 * * /path/to/monthly-cleanup.sh
+
+# Weekdays at 8 AM
+0 8 * * 1-5 /path/to/workday-task.sh
+```
+
+**Special strings (shortcuts):**
+```bash
+@reboot   # Run once at system startup
+@hourly   # Equivalent to: 0 * * * *
+@daily    # Equivalent to: 0 0 * * *
+@weekly   # Equivalent to: 0 0 * * 0
+@monthly  # Equivalent to: 0 0 1 * *
+@yearly   # Equivalent to: 0 0 1 1 *
+```
+
+### crontab
+**Manage Per-User Cron Jobs**
+```bash
+crontab -e               # Edit your crontab (opens in $EDITOR)
+crontab -l               # List current user's cron jobs
+crontab -r               # Remove all cron jobs for current user
+crontab -u username -l   # List another user's cron jobs (root only)
+```
+
+**Best practices for cron jobs:**
+```bash
+# Always use absolute paths — cron runs with a minimal PATH
+30 2 * * * /usr/bin/python3 /home/user/scripts/backup.py
+
+# Redirect output to a log file to capture errors
+0 * * * * /home/user/scripts/hourly.sh >> /var/log/hourly.log 2>&1
+
+# Suppress output entirely (if you don't need logs)
+*/5 * * * * /home/user/scripts/silent.sh > /dev/null 2>&1
+
+# Set environment variables at the top of the crontab
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=admin@example.com   # Email output to this address
+```
+
+**System-wide cron directories** (no crontab editing required):
+```bash
+/etc/cron.d/        # Drop-in cron files with user field
+/etc/cron.daily/    # Scripts run daily
+/etc/cron.hourly/   # Scripts run hourly
+/etc/cron.weekly/   # Scripts run weekly
+/etc/cron.monthly/  # Scripts run monthly
+```
+
+## Debug and Troubleshoot Bash Scripts
+
+### Shell Debug Options
+```bash
+#!/bin/bash
+set -x    # Print each command before executing it (xtrace)
+set -e    # Exit immediately if a command fails
+set -u    # Treat unset variables as errors
+set -o pipefail  # Catch errors in pipelines (not just the last command)
+
+# Combine all four — recommended for robust scripts
+set -euxo pipefail
+```
+
+**Enable/disable xtrace around a specific block:**
+```bash
+set -x
+# ... commands to trace ...
+set +x   # Disable xtrace
+```
+
+**Run a script with debug flags without editing it:**
+```bash
+bash -x script.sh          # Trace every command
+bash -n script.sh          # Syntax check only — does not execute
+bash -v script.sh          # Print lines as they are read
+```
+
+### Inspecting Variables
+```bash
+# Print variable value and type
+echo "value='$my_var'"
+declare -p my_var          # Shows type flags: -i (integer), -a (array), etc.
+
+# Check if a variable is set
+if [ -z "${my_var+x}" ]; then
+    echo "my_var is unset"
+else
+    echo "my_var='$my_var'"
+fi
+```
+
+### Trapping Errors
+```bash
+#!/bin/bash
+set -euo pipefail
+
+# Run cleanup on exit (success or failure)
+cleanup() {
+    echo "Cleaning up temp files..."
+    rm -f /tmp/script_tmp_*
+}
+trap cleanup EXIT
+
+# Print which line caused an error
+trap 'echo "Error on line $LINENO" >&2' ERR
+
+# Debug: print every command with line number
+export PS4='+(${BASH_SOURCE}:${LINENO}): '
+set -x
+```
+
+### Checking Exit Codes
+```bash
+# Every command returns an exit code: 0 = success, non-zero = failure
+ls /nonexistent
+echo "Exit code: $?"      # $? holds the last command's exit code
+
+# Explicit error handling without set -e
+if ! cp source.txt dest.txt; then
+    echo "Copy failed" >&2
+    exit 1
+fi
+
+# Run a command and capture both output and exit code
+output=$(some_command 2>&1) || {
+    echo "Command failed: $output" >&2
+    exit 1
+}
+```
+
+### Common Pitfalls
+```bash
+# WRONG: unquoted variable — breaks on spaces or globs
+for file in $files; do ...
+
+# CORRECT: quoted
+for file in "$files"; do ...
+# Or better — use an array:
+declare -a files=("file one.txt" "file two.txt")
+for file in "${files[@]}"; do ...
+
+# WRONG: comparing integers with string operator
+if [ "$count" = "10" ]; then ...
+
+# CORRECT: use -eq for integers
+if [ "$count" -eq 10 ]; then ...
+
+# WRONG: piping to read loses variables (subshell issue)
+cat file.txt | while read line; do total=$((total+1)); done
+echo "$total"  # Always prints 0
+
+# CORRECT: use process substitution or redirect
+while IFS= read -r line; do total=$((total+1)); done < file.txt
+echo "$total"  # Correct count
+```
+
+### Logging Helper Pattern
+```bash
+#!/bin/bash
+readonly LOG_FILE="/var/log/myscript.log"
+
+log()   { echo "[$(date '+%F %T')] INFO  $*" | tee -a "$LOG_FILE"; }
+warn()  { echo "[$(date '+%F %T')] WARN  $*" | tee -a "$LOG_FILE" >&2; }
+error() { echo "[$(date '+%F %T')] ERROR $*" | tee -a "$LOG_FILE" >&2; }
+
+log "Script started"
+warn "Disk usage above 80%"
+error "Database connection failed"; exit 1
+```
+
 ## Useful Combinations & Pipelines
 
 ### Log Analysis Pipeline
@@ -599,6 +985,40 @@ BACKUP_DIR="/backup"
 DATE=$(date +%Y%m%d_%H%M%S)
 tar -czf "$BACKUP_DIR/backup_$DATE.tar.gz" /important/data/
 find "$BACKUP_DIR" -name "backup_*.tar.gz" -mtime +30 -delete
+```
+
+## Shell History
+
+### history
+**Command History** - Displays previously run commands
+```bash
+history                    # Show all recorded commands with line numbers
+history 20                 # Show last 20 commands
+history -c                 # Clear the current session history
+history -w                 # Write current history to ~/.bash_history
+```
+
+**Re-run commands from history:**
+```bash
+!!                         # Repeat the last command
+!42                        # Run command number 42 from history
+!grep                      # Run the most recent command starting with "grep"
+^old^new                   # Repeat last command replacing "old" with "new"
+```
+
+**Search history interactively:**
+```bash
+# Press Ctrl+R and start typing to search backwards through history
+# Press Ctrl+R again to cycle through matches
+# Press Enter to execute, or Ctrl+G to cancel
+```
+
+**History configuration in `~/.bashrc`:**
+```bash
+HISTSIZE=10000             # Number of commands kept in memory
+HISTFILESIZE=20000         # Number of commands saved to disk
+HISTCONTROL=ignoredups     # Don't record duplicate consecutive commands
+HISTTIMEFORMAT="%F %T "   # Prepend timestamp to each entry
 ```
 
 ## Tips for Developers
