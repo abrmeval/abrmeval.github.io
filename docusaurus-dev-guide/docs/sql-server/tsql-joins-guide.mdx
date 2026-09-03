@@ -4,15 +4,244 @@ sidebar_label: "T-SQL Joins"
 sidebar_position: 2
 tags: [sql-server, tsql, joins, database]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Verify if it is accurate."/>
 
 # T-SQL Joins: A Complete Guide
 
 A detailed exploration of all T-SQL join types in SQL Server — INNER, LEFT/RIGHT/FULL OUTER, CROSS, SELF joins — with visual diagrams, syntax, and practical examples.
 
-<iframe
-  src="https://claude.ai/public/artifacts/5737325e-c451-41ba-843a-d893997cf0b5/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="T-SQL Joins: A Complete Guide"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# T-SQL Joins: A Complete Guide
+
+## Introduction
+
+Joins are fundamental operations in SQL that allow you to combine data from two or more tables based on related columns. Understanding joins is essential for working with relational databases, where data is typically normalized across multiple tables.
+
+In this guide, we'll explore each type of join with practical examples using two sample tables: Employees and Departments.
+
+## Sample Tables
+
+Let's start by creating two simple tables that we'll use throughout our examples.
+
+**Employees Table:**
+
+| EmployeeID | Name | DepartmentID |
+|------------|------------|--------------|
+| 1 | Alice | 10 |
+| 2 | Bob | 20 |
+| 3 | Charlie | 30 |
+| 4 | Diana | NULL |
+| 5 | Edward | 40 |
+
+**Departments Table:**
+
+| DepartmentID | DepartmentName |
+|--------------|------------------|
+| 10 | Sales |
+| 20 | Marketing |
+| 30 | Engineering |
+| 50 | HR |
+
+Notice that Diana doesn't have a department assigned (NULL value), and the HR department (ID 50) doesn't have any employees assigned to it yet. These edge cases will help us understand how different joins behave.
+
+## INNER JOIN
+
+An INNER JOIN returns only the rows where there is a match in both tables. Think of it as the intersection of two sets—you only get records that exist in both tables based on your join condition.
+
+### Example
+
+```sql
+SELECT 
+    e.EmployeeID,
+    e.Name,
+    d.DepartmentName
+FROM Employees e
+INNER JOIN Departments d 
+    ON e.DepartmentID = d.DepartmentID;
+```
+
+### Result
+
+| EmployeeID | Name | DepartmentName |
+|------------|---------|------------------|
+| 1 | Alice | Sales |
+| 2 | Bob | Marketing |
+| 3 | Charlie | Engineering |
+
+### Explanation
+
+This query returns only three employees because only Alice, Bob, and Charlie have matching department IDs in the Departments table. Diana is excluded because her DepartmentID is NULL, and Edward is excluded because there's no department with ID 40. The HR department doesn't appear because no employees are assigned to it.
+
+## LEFT JOIN (LEFT OUTER JOIN)
+
+A LEFT JOIN returns all rows from the left table and the matched rows from the right table. When there's no match, the result will contain NULL values for the right table's columns. This is perfect when you want to keep all records from your primary table regardless of whether they have matches.
+
+### Example
+
+```sql
+SELECT 
+    e.EmployeeID,
+    e.Name,
+    e.DepartmentID,
+    d.DepartmentName
+FROM Employees e
+LEFT JOIN Departments d 
+    ON e.DepartmentID = d.DepartmentID;
+```
+
+### Result
+
+| EmployeeID | Name | DepartmentID | DepartmentName |
+|------------|---------|--------------|------------------|
+| 1 | Alice | 10 | Sales |
+| 2 | Bob | 20 | Marketing |
+| 3 | Charlie | 30 | Engineering |
+| 4 | Diana | NULL | NULL |
+| 5 | Edward | 40 | NULL |
+
+### Explanation
+
+All five employees appear in the result because we're keeping everything from the left table (Employees). Diana and Edward don't have matching departments, so their DepartmentName shows as NULL. This join is useful when you want to see all employees, even those not yet assigned to a department.
+
+## RIGHT JOIN (RIGHT OUTER JOIN)
+
+A RIGHT JOIN is the mirror image of a LEFT JOIN. It returns all rows from the right table and the matched rows from the left table. When there's no match, NULL values appear for the left table's columns.
+
+### Example
+
+```sql
+SELECT 
+    e.EmployeeID,
+    e.Name,
+    d.DepartmentID,
+    d.DepartmentName
+FROM Employees e
+RIGHT JOIN Departments d 
+    ON e.DepartmentID = d.DepartmentID;
+```
+
+### Result
+
+| EmployeeID | Name | DepartmentID | DepartmentName |
+|------------|---------|--------------|------------------|
+| 1 | Alice | 10 | Sales |
+| 2 | Bob | 20 | Marketing |
+| 3 | Charlie | 30 | Engineering |
+| NULL | NULL | 50 | HR |
+
+### Explanation
+
+All four departments appear in the result because we're keeping everything from the right table (Departments). The HR department has no employees assigned, so the employee columns show NULL. Notice that Diana and Edward don't appear at all because they don't have valid department matches.
+
+## FULL OUTER JOIN
+
+A FULL OUTER JOIN combines the behavior of both LEFT and RIGHT joins. It returns all rows from both tables, with NULL values filling in where there are no matches. This gives you a complete picture of both tables together.
+
+### Example
+
+```sql
+SELECT 
+    e.EmployeeID,
+    e.Name,
+    e.DepartmentID AS EmpDeptID,
+    d.DepartmentID AS DeptDeptID,
+    d.DepartmentName
+FROM Employees e
+FULL OUTER JOIN Departments d 
+    ON e.DepartmentID = d.DepartmentID;
+```
+
+### Result
+
+| EmployeeID | Name | EmpDeptID | DeptDeptID | DepartmentName |
+|------------|---------|-----------|------------|------------------|
+| 1 | Alice | 10 | 10 | Sales |
+| 2 | Bob | 20 | 20 | Marketing |
+| 3 | Charlie | 30 | 30 | Engineering |
+| 4 | Diana | NULL | NULL | NULL |
+| 5 | Edward | 40 | NULL | NULL |
+| NULL | NULL | NULL | 50 | HR |
+
+### Explanation
+
+This result shows everything: all employees and all departments. We see the three employees with matching departments, Diana with no department, Edward with an invalid department reference, and the HR department with no employees. This join is useful for data auditing or finding orphaned records in either table.
+
+## CROSS JOIN
+
+A CROSS JOIN creates a Cartesian product of two tables, meaning it returns every possible combination of rows from both tables. Unlike other joins, it doesn't use an ON clause because it's not based on matching conditions.
+
+### Example
+
+```sql
+SELECT 
+    e.Name,
+    d.DepartmentName
+FROM Employees e
+CROSS JOIN Departments d;
+```
+
+### Result (showing first 8 of 20 rows)
+
+| Name | DepartmentName |
+|---------|------------------|
+| Alice | Sales |
+| Alice | Marketing |
+| Alice | Engineering |
+| Alice | HR |
+| Bob | Sales |
+| Bob | Marketing |
+| Bob | Engineering |
+| Bob | HR |
+| ... | ... |
+
+### Explanation
+
+With 5 employees and 4 departments, this query produces 20 rows (5 × 4). Each employee is paired with each department. CROSS JOIN is rarely used in production queries but can be helpful for generating test data, creating calendars, or building comparison matrices.
+
+## SELF JOIN
+
+A SELF JOIN is when a table is joined to itself. This isn't a different type of join syntax, but rather a technique using any join type (usually INNER or LEFT) where both sides reference the same table. This is useful for hierarchical data or comparing rows within the same table.
+
+### Example Setup
+
+Imagine our Employees table also has a ManagerID column:
+
+| EmployeeID | Name | DepartmentID | ManagerID |
+|------------|---------|--------------|-----------|
+| 1 | Alice | 10 | 3 |
+| 2 | Bob | 20 | 3 |
+| 3 | Charlie | 30 | NULL |
+| 4 | Diana | NULL | 1 |
+| 5 | Edward | 40 | 1 |
+
+### Example Query
+
+```sql
+SELECT 
+    e.Name AS Employee,
+    m.Name AS Manager
+FROM Employees e
+LEFT JOIN Employees m 
+    ON e.ManagerID = m.EmployeeID;
+```
+
+### Result
+
+| Employee | Manager |
+|----------|---------|
+| Alice | Charlie |
+| Bob | Charlie |
+| Charlie | NULL |
+| Diana | Alice |
+| Edward | Alice |
+
+### Explanation
+
+We're using the same table twice with different aliases (e for employee, m for manager). This allows us to find each employee's manager by matching the ManagerID to another employee's EmployeeID. Charlie appears with a NULL manager because he's at the top of the hierarchy. This pattern is common in organizational charts, category trees, and any self-referential data structure.
+
+## Key Takeaways
+
+Understanding when to use each join type is crucial for writing effective SQL queries. INNER JOIN is your go-to for matching records, LEFT JOIN helps when you need all records from your primary table, FULL OUTER JOIN is perfect for finding gaps in both tables, and CROSS JOIN creates all possible combinations. Remember that choosing the right join affects not just what data you get back, but also query performance and clarity of intent.
+
+As you practice with joins, pay special attention to NULL values and how they behave differently across join types. This understanding will help you avoid common pitfalls and write more robust queries.

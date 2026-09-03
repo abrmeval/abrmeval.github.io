@@ -4,15 +4,1120 @@ sidebar_label: "SOLID Principles"
 sidebar_position: 2
 tags: [csharp, solid, design-principles, oop]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Verify if it is accurate"/>
 
 # SOLID Principles in C#: A Comprehensive Guide
 
 A comprehensive guide to understanding and applying SOLID principles in C# development — Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion.
 
-<iframe
-  src="https://claude.ai/public/artifacts/3fad5545-7ec5-48ef-8dd4-4dbfdca05abf/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="SOLID Principles in C#"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# SOLID Principles in C#: A Comprehensive Guide
+
+## Introduction
+
+SOLID is an acronym that represents five fundamental principles of object-oriented programming and design. These principles were introduced by Robert C. Martin (Uncle Bob) and have become cornerstones of writing maintainable, scalable, and testable code. When you follow SOLID principles, your code becomes easier to understand, modify, and extend without breaking existing functionality.
+
+Think of SOLID principles as guidelines that help you avoid common pitfalls in software design. Just as a well-designed building has a strong foundation and logical structure, well-designed software follows patterns that make it resilient to change and easy to work with over time.
+
+## The Five SOLID Principles
+
+1. **S**ingle Responsibility Principle (SRP)
+2. **O**pen/Closed Principle (OCP)
+3. **L**iskov Substitution Principle (LSP)
+4. **I**nterface Segregation Principle (ISP)
+5. **D**ependency Inversion Principle (DIP)
+
+---
+
+## 1. Single Responsibility Principle (SRP)
+
+### The Principle
+
+A class should have only one reason to change. In other words, a class should have only one job or responsibility.
+
+### Why It Matters
+
+When a class has multiple responsibilities, changes to one responsibility can affect or break the others. This creates fragile code that's difficult to maintain and test. By keeping each class focused on a single responsibility, you create modular code where changes are isolated and predictable.
+
+### Example: Violating SRP
+
+```csharp
+// BAD: This class has multiple responsibilities
+public class UserService
+{
+    // Responsibility 1: User management
+    public void RegisterUser(string email, string password)
+    {
+        // Validate user input
+        if (string.IsNullOrEmpty(email) || !email.Contains("@"))
+            throw new ArgumentException("Invalid email");
+        
+        // Hash the password
+        var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
+        
+        // Save to database
+        using var connection = new SqlConnection("connection_string");
+        connection.Open();
+        var command = new SqlCommand(
+            "INSERT INTO Users (Email, Password) VALUES (@email, @password)", 
+            connection);
+        command.Parameters.AddWithValue("@email", email);
+        command.Parameters.AddWithValue("@password", hashedPassword);
+        command.ExecuteNonQuery();
+        
+        // Responsibility 2: Email notification
+        var smtpClient = new SmtpClient("smtp.gmail.com");
+        var message = new MailMessage(
+            "noreply@example.com", 
+            email, 
+            "Welcome!", 
+            "Thank you for registering");
+        smtpClient.Send(message);
+        
+        // Responsibility 3: Logging
+        File.AppendAllText("log.txt", $"User {email} registered at {DateTime.Now}\n");
+    }
+}
+```
+
+This class violates SRP because it handles user registration, database operations, email sending, and logging. Any change to how we send emails, store data, or log information would require modifying this class.
+
+### Example: Following SRP
+
+```csharp
+// GOOD: Each class has a single, well-defined responsibility
+
+// Handles user-related business logic
+public class UserService
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IPasswordHasher _passwordHasher;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<UserService> _logger;
+
+    public UserService(
+        IUserRepository userRepository,
+        IPasswordHasher passwordHasher,
+        IEmailService emailService,
+        ILogger<UserService> logger)
+    {
+        _userRepository = userRepository;
+        _passwordHasher = passwordHasher;
+        _emailService = emailService;
+        _logger = logger;
+    }
+
+    public async Task RegisterUserAsync(string email, string password)
+    {
+        // This class focuses only on orchestrating the user registration process
+        var hashedPassword = _passwordHasher.HashPassword(password);
+        var user = new User { Email = email, PasswordHash = hashedPassword };
+        
+        await _userRepository.AddAsync(user);
+        await _emailService.SendWelcomeEmailAsync(email);
+        
+        _logger.LogInformation("User {Email} registered successfully", email);
+    }
+}
+
+// Handles password hashing
+public class PasswordHasher : IPasswordHasher
+{
+    public string HashPassword(string password)
+    {
+        return BCrypt.Net.BCrypt.HashPassword(password);
+    }
+}
+
+// Handles data persistence
+public class UserRepository : IUserRepository
+{
+    private readonly ApplicationDbContext _context;
+
+    public UserRepository(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task AddAsync(User user)
+    {
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+    }
+}
+
+// Handles email operations
+public class EmailService : IEmailService
+{
+    private readonly IConfiguration _configuration;
+
+    public EmailService(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
+    public async Task SendWelcomeEmailAsync(string email)
+    {
+        using var smtpClient = new SmtpClient(_configuration["SmtpHost"]);
+        var message = new MailMessage(
+            _configuration["FromEmail"], 
+            email, 
+            "Welcome!", 
+            "Thank you for registering");
+        await smtpClient.SendMailAsync(message);
+    }
+}
+```
+
+Now each class has a single responsibility. If we need to change how passwords are hashed, we only modify `PasswordHasher`. If email sending logic changes, we only touch `EmailService`. This makes the code easier to test, maintain, and understand.
+
+---
+
+## 2. Open/Closed Principle (OCP)
+
+### The Principle
+
+Software entities (classes, modules, functions) should be open for extension but closed for modification. You should be able to add new functionality without changing existing code.
+
+### Why It Matters
+
+When you modify existing code to add new features, you risk breaking functionality that already works. By designing your code to be extended rather than modified, you create more stable systems where new features don't introduce bugs into existing features.
+
+### Example: Violating OCP
+
+```csharp
+// BAD: Adding new payment methods requires modifying existing code
+public class PaymentProcessor
+{
+    public void ProcessPayment(string paymentType, decimal amount)
+    {
+        // Every new payment method requires modifying this class
+        if (paymentType == "CreditCard")
+        {
+            Console.WriteLine($"Processing credit card payment of ${amount}");
+            // Credit card processing logic
+        }
+        else if (paymentType == "PayPal")
+        {
+            Console.WriteLine($"Processing PayPal payment of ${amount}");
+            // PayPal processing logic
+        }
+        else if (paymentType == "Bitcoin")
+        {
+            Console.WriteLine($"Processing Bitcoin payment of ${amount}");
+            // Bitcoin processing logic
+        }
+        // What if we want to add Apple Pay? We have to modify this method again!
+    }
+}
+```
+
+Every time we want to support a new payment method, we have to modify the `ProcessPayment` method. This violates OCP because the class is not closed for modification.
+
+### Example: Following OCP
+
+```csharp
+// GOOD: New payment methods can be added without modifying existing code
+
+// Define a common interface for all payment methods
+public interface IPaymentMethod
+{
+    Task<PaymentResult> ProcessAsync(decimal amount);
+    string PaymentMethodName { get; }
+}
+
+// Each payment method is a separate class implementing the interface
+public class CreditCardPayment : IPaymentMethod
+{
+    public string PaymentMethodName => "Credit Card";
+
+    public async Task<PaymentResult> ProcessAsync(decimal amount)
+    {
+        // Credit card specific processing logic
+        Console.WriteLine($"Processing {PaymentMethodName} payment of ${amount}");
+        await Task.Delay(100); // Simulate API call
+        return new PaymentResult { Success = true, TransactionId = Guid.NewGuid().ToString() };
+    }
+}
+
+public class PayPalPayment : IPaymentMethod
+{
+    public string PaymentMethodName => "PayPal";
+
+    public async Task<PaymentResult> ProcessAsync(decimal amount)
+    {
+        // PayPal specific processing logic
+        Console.WriteLine($"Processing {PaymentMethodName} payment of ${amount}");
+        await Task.Delay(100); // Simulate API call
+        return new PaymentResult { Success = true, TransactionId = Guid.NewGuid().ToString() };
+    }
+}
+
+public class BitcoinPayment : IPaymentMethod
+{
+    public string PaymentMethodName => "Bitcoin";
+
+    public async Task<PaymentResult> ProcessAsync(decimal amount)
+    {
+        // Bitcoin specific processing logic
+        Console.WriteLine($"Processing {PaymentMethodName} payment of ${amount}");
+        await Task.Delay(100); // Simulate API call
+        return new PaymentResult { Success = true, TransactionId = Guid.NewGuid().ToString() };
+    }
+}
+
+// The processor doesn't need to change when new payment methods are added
+public class PaymentProcessor
+{
+    private readonly IEnumerable<IPaymentMethod> _paymentMethods;
+
+    public PaymentProcessor(IEnumerable<IPaymentMethod> paymentMethods)
+    {
+        _paymentMethods = paymentMethods;
+    }
+
+    public async Task<PaymentResult> ProcessPaymentAsync(string paymentMethodName, decimal amount)
+    {
+        // Find the appropriate payment method
+        var paymentMethod = _paymentMethods
+            .FirstOrDefault(pm => pm.PaymentMethodName.Equals(paymentMethodName, StringComparison.OrdinalIgnoreCase));
+
+        if (paymentMethod == null)
+            throw new InvalidOperationException($"Payment method '{paymentMethodName}' not supported");
+
+        return await paymentMethod.ProcessAsync(amount);
+    }
+}
+
+// Adding Apple Pay is now as simple as creating a new class - no existing code changes needed!
+public class ApplePayPayment : IPaymentMethod
+{
+    public string PaymentMethodName => "Apple Pay";
+
+    public async Task<PaymentResult> ProcessAsync(decimal amount)
+    {
+        Console.WriteLine($"Processing {PaymentMethodName} payment of ${amount}");
+        await Task.Delay(100);
+        return new PaymentResult { Success = true, TransactionId = Guid.NewGuid().ToString() };
+    }
+}
+```
+
+Now the `PaymentProcessor` class is closed for modification but open for extension. You can add new payment methods by creating new classes without touching existing code.
+
+---
+
+## 3. Liskov Substitution Principle (LSP)
+
+### The Principle
+
+Objects of a derived class should be able to replace objects of the base class without affecting the correctness of the program. In simpler terms, if class B is a subtype of class A, we should be able to replace A with B without disrupting the behavior of our program.
+
+### Why It Matters
+
+When derived classes don't properly substitute for their base classes, you end up with unexpected behavior and bugs. LSP ensures that inheritance is used correctly and that polymorphism works as expected. Violating LSP often indicates a flawed inheritance hierarchy.
+
+### Example: Violating LSP
+
+```csharp
+// BAD: Square violates LSP when used as a Rectangle
+public class Rectangle
+{
+    public virtual int Width { get; set; }
+    public virtual int Height { get; set; }
+
+    public int CalculateArea()
+    {
+        return Width * Height;
+    }
+}
+
+// A square is mathematically a rectangle, but this inheritance violates LSP
+public class Square : Rectangle
+{
+    private int _side;
+
+    public override int Width
+    {
+        get => _side;
+        set => _side = value;
+    }
+
+    public override int Height
+    {
+        get => _side;
+        set => _side = value;
+    }
+}
+
+// This code breaks when we use Square instead of Rectangle
+public class AreaCalculator
+{
+    public void PrintArea(Rectangle rectangle)
+    {
+        // This works fine for Rectangle
+        rectangle.Width = 5;
+        rectangle.Height = 10;
+        
+        // Expected area: 50
+        // But if rectangle is actually a Square, area will be 100!
+        Console.WriteLine($"Area: {rectangle.CalculateArea()}");
+    }
+}
+```
+
+The problem here is that a `Square` changes its behavior in unexpected ways. When you set the width of a `Rectangle`, you don't expect the height to change, but with `Square` it does. This violates the expectations of code that works with `Rectangle`.
+
+### Example: Following LSP
+
+```csharp
+// GOOD: Proper abstraction that respects LSP
+
+// Define a common abstraction for all shapes
+public abstract class Shape
+{
+    public abstract int CalculateArea();
+}
+
+// Rectangle implementation
+public class Rectangle : Shape
+{
+    public int Width { get; set; }
+    public int Height { get; set; }
+
+    public Rectangle(int width, int height)
+    {
+        Width = width;
+        Height = height;
+    }
+
+    public override int CalculateArea()
+    {
+        return Width * Height;
+    }
+}
+
+// Square implementation - doesn't pretend to be a Rectangle
+public class Square : Shape
+{
+    public int Side { get; set; }
+
+    public Square(int side)
+    {
+        Side = side;
+    }
+
+    public override int CalculateArea()
+    {
+        return Side * Side;
+    }
+}
+
+// This code works correctly with any Shape
+public class AreaCalculator
+{
+    public void PrintArea(Shape shape)
+    {
+        // We don't make assumptions about how the shape calculates its area
+        // Each shape handles its own area calculation correctly
+        Console.WriteLine($"Area: {shape.CalculateArea()}");
+    }
+
+    // If we need rectangle-specific behavior, we use Rectangle directly
+    public void PrintRectangleWithDimensions(Rectangle rectangle)
+    {
+        rectangle.Width = 5;
+        rectangle.Height = 10;
+        Console.WriteLine($"Rectangle {rectangle.Width}x{rectangle.Height}, Area: {rectangle.CalculateArea()}");
+    }
+}
+```
+
+Now both `Rectangle` and `Square` can substitute for `Shape` without breaking the behavior. We've recognized that while a square is mathematically a special case of a rectangle, in object-oriented design they have different behaviors and should be modeled separately.
+
+---
+
+## 4. Interface Segregation Principle (ISP)
+
+### The Principle
+
+No client should be forced to depend on methods it does not use. Instead of one large interface, create smaller, more specific interfaces so that clients only need to know about the methods that are relevant to them.
+
+### Why It Matters
+
+Large, bloated interfaces create unnecessary coupling and force implementing classes to provide implementations for methods they don't actually need. This leads to confusing code, empty implementations, and violation of SRP. Smaller, focused interfaces create more flexible and maintainable systems.
+
+### Example: Violating ISP
+
+```csharp
+// BAD: One large interface forces all implementations to support all operations
+public interface IWorker
+{
+    void Work();
+    void Eat();
+    void Sleep();
+    void GetSalary();
+    void SubmitTimesheet();
+}
+
+// A robot worker doesn't eat or sleep, but is forced to implement these methods
+public class RobotWorker : IWorker
+{
+    public void Work()
+    {
+        Console.WriteLine("Robot is working efficiently");
+    }
+
+    // These methods make no sense for a robot, but we're forced to implement them
+    public void Eat()
+    {
+        throw new NotImplementedException("Robots don't eat");
+    }
+
+    public void Sleep()
+    {
+        throw new NotImplementedException("Robots don't sleep");
+    }
+
+    public void GetSalary()
+    {
+        throw new NotImplementedException("Robots don't get paid");
+    }
+
+    public void SubmitTimesheet()
+    {
+        Console.WriteLine("Robot submitting operational hours");
+    }
+}
+
+// A contractor doesn't submit timesheets the same way, but must implement the method
+public class ContractorWorker : IWorker
+{
+    public void Work()
+    {
+        Console.WriteLine("Contractor is working");
+    }
+
+    public void Eat()
+    {
+        Console.WriteLine("Contractor is eating lunch");
+    }
+
+    public void Sleep()
+    {
+        Console.WriteLine("Contractor is resting");
+    }
+
+    public void GetSalary()
+    {
+        Console.WriteLine("Contractor receiving payment");
+    }
+
+    // Contractors invoice rather than submit timesheets
+    public void SubmitTimesheet()
+    {
+        throw new NotImplementedException("Contractors submit invoices, not timesheets");
+    }
+}
+```
+
+The interface is too broad, forcing implementations to deal with methods that don't apply to them.
+
+### Example: Following ISP
+
+```csharp
+// GOOD: Segregated interfaces allow classes to implement only what they need
+
+// Core working capability
+public interface IWorkable
+{
+    void Work();
+}
+
+// Biological needs for human workers
+public interface IBiologicalNeeds
+{
+    void Eat();
+    void Sleep();
+}
+
+// Payment processing
+public interface IPayable
+{
+    void GetSalary();
+}
+
+// Time tracking
+public interface ITimeTrackable
+{
+    void SubmitTimesheet();
+}
+
+// A robot only implements what makes sense for a robot
+public class RobotWorker : IWorkable, ITimeTrackable
+{
+    public void Work()
+    {
+        Console.WriteLine("Robot is working efficiently");
+    }
+
+    public void SubmitTimesheet()
+    {
+        Console.WriteLine("Robot submitting operational hours");
+    }
+}
+
+// A full-time employee implements all relevant interfaces
+public class FullTimeEmployee : IWorkable, IBiologicalNeeds, IPayable, ITimeTrackable
+{
+    public void Work()
+    {
+        Console.WriteLine("Employee is working");
+    }
+
+    public void Eat()
+    {
+        Console.WriteLine("Employee is eating lunch");
+    }
+
+    public void Sleep()
+    {
+        Console.WriteLine("Employee is resting");
+    }
+
+    public void GetSalary()
+    {
+        Console.WriteLine("Employee receiving salary");
+    }
+
+    public void SubmitTimesheet()
+    {
+        Console.WriteLine("Employee submitting timesheet");
+    }
+}
+
+// A contractor implements only what's relevant
+public class ContractorWorker : IWorkable, IBiologicalNeeds, IPayable
+{
+    public void Work()
+    {
+        Console.WriteLine("Contractor is working");
+    }
+
+    public void Eat()
+    {
+        Console.WriteLine("Contractor is eating lunch");
+    }
+
+    public void Sleep()
+    {
+        Console.WriteLine("Contractor is resting");
+    }
+
+    public void GetSalary()
+    {
+        Console.WriteLine("Contractor receiving payment via invoice");
+    }
+}
+
+// Client code can depend on specific interfaces it needs
+public class WorkManager
+{
+    // Only depends on the ability to work - doesn't care about biological needs or payment
+    public void ManageWork(IWorkable worker)
+    {
+        worker.Work();
+    }
+}
+
+public class PayrollManager
+{
+    // Only depends on payment capability
+    public void ProcessPayroll(IPayable worker)
+    {
+        worker.GetSalary();
+    }
+}
+```
+
+Now each class implements only the interfaces that make sense for it, and client code can depend on small, focused interfaces rather than a large, bloated one.
+
+---
+
+## 5. Dependency Inversion Principle (DIP)
+
+### The Principle
+
+High-level modules should not depend on low-level modules. Both should depend on abstractions. Additionally, abstractions should not depend on details. Details should depend on abstractions.
+
+### Why It Matters
+
+When high-level business logic directly depends on low-level implementation details like databases or external services, your code becomes rigid and difficult to test. DIP creates flexible systems where you can swap implementations without changing business logic. It's the foundation of dependency injection and testable architecture.
+
+### Example: Violating DIP
+
+```csharp
+// BAD: High-level class directly depends on low-level implementation
+public class OrderService
+{
+    // Direct dependency on concrete implementation
+    private readonly SqlServerRepository _repository;
+    private readonly SmtpEmailService _emailService;
+
+    public OrderService()
+    {
+        // Creating dependencies directly - tightly coupled
+        _repository = new SqlServerRepository("connection_string");
+        _emailService = new SmtpEmailService("smtp.gmail.com");
+    }
+
+    public void PlaceOrder(Order order)
+    {
+        // Business logic is tightly coupled to specific implementations
+        _repository.SaveOrder(order);
+        _emailService.SendOrderConfirmation(order.CustomerEmail);
+    }
+}
+
+// Low-level implementation
+public class SqlServerRepository
+{
+    private readonly string _connectionString;
+
+    public SqlServerRepository(string connectionString)
+    {
+        _connectionString = connectionString;
+    }
+
+    public void SaveOrder(Order order)
+    {
+        // SQL Server specific code
+        using var connection = new SqlConnection(_connectionString);
+        // Save order...
+    }
+}
+
+// Low-level implementation
+public class SmtpEmailService
+{
+    private readonly string _smtpHost;
+
+    public SmtpEmailService(string smtpHost)
+    {
+        _smtpHost = smtpHost;
+    }
+
+    public void SendOrderConfirmation(string email)
+    {
+        // SMTP specific code
+        var client = new SmtpClient(_smtpHost);
+        // Send email...
+    }
+}
+```
+
+Problems with this approach include difficulty testing the `OrderService` (you can't easily mock the dependencies), inability to switch databases or email providers without modifying `OrderService`, and tight coupling that makes the code rigid.
+
+### Example: Following DIP
+
+```csharp
+// GOOD: Depend on abstractions, not implementations
+
+// High-level abstraction for data persistence
+public interface IOrderRepository
+{
+    Task SaveOrderAsync(Order order);
+    Task<Order> GetOrderByIdAsync(int orderId);
+}
+
+// High-level abstraction for email functionality
+public interface IEmailService
+{
+    Task SendOrderConfirmationAsync(string email, Order order);
+}
+
+// High-level business logic depends only on abstractions
+public class OrderService
+{
+    private readonly IOrderRepository _repository;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<OrderService> _logger;
+
+    // Dependencies are injected - the service doesn't know or care about specific implementations
+    public OrderService(
+        IOrderRepository repository,
+        IEmailService emailService,
+        ILogger<OrderService> logger)
+    {
+        _repository = repository;
+        _emailService = emailService;
+        _logger = logger;
+    }
+
+    public async Task PlaceOrderAsync(Order order)
+    {
+        // Business logic is decoupled from implementation details
+        await _repository.SaveOrderAsync(order);
+        await _emailService.SendOrderConfirmationAsync(order.CustomerEmail, order);
+        
+        _logger.LogInformation("Order {OrderId} placed successfully", order.Id);
+    }
+}
+
+// Low-level implementation - can be easily swapped
+public class SqlServerOrderRepository : IOrderRepository
+{
+    private readonly ApplicationDbContext _context;
+
+    public SqlServerOrderRepository(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task SaveOrderAsync(Order order)
+    {
+        _context.Orders.Add(order);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<Order> GetOrderByIdAsync(int orderId)
+    {
+        return await _context.Orders.FindAsync(orderId);
+    }
+}
+
+// Alternative implementation - easy to switch to without changing OrderService
+public class MongoDbOrderRepository : IOrderRepository
+{
+    private readonly IMongoCollection<Order> _collection;
+
+    public MongoDbOrderRepository(IMongoDatabase database)
+    {
+        _collection = database.GetCollection<Order>("orders");
+    }
+
+    public async Task SaveOrderAsync(Order order)
+    {
+        await _collection.InsertOneAsync(order);
+    }
+
+    public async Task<Order> GetOrderByIdAsync(int orderId)
+    {
+        return await _collection.Find(o => o.Id == orderId).FirstOrDefaultAsync();
+    }
+}
+
+// Low-level email implementation
+public class SmtpEmailService : IEmailService
+{
+    private readonly IConfiguration _configuration;
+
+    public SmtpEmailService(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
+    public async Task SendOrderConfirmationAsync(string email, Order order)
+    {
+        using var client = new SmtpClient(_configuration["SmtpHost"]);
+        var message = new MailMessage(
+            _configuration["FromEmail"], 
+            email, 
+            "Order Confirmation", 
+            $"Your order {order.Id} has been placed");
+        await client.SendMailAsync(message);
+    }
+}
+
+// Registering dependencies in ASP.NET Core (Startup.cs or Program.cs)
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+
+        // Register dependencies - easy to swap implementations
+        builder.Services.AddScoped<IOrderRepository, SqlServerOrderRepository>();
+        builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+        builder.Services.AddScoped<OrderService>();
+
+        var app = builder.Build();
+        app.Run();
+    }
+}
+```
+
+Now `OrderService` depends on abstractions rather than concrete implementations. You can easily swap `SqlServerOrderRepository` for `MongoDbOrderRepository` or create a `MockEmailService` for testing without changing the business logic.
+
+---
+
+## Applying SOLID Principles Together
+
+The real power of SOLID principles comes from applying them together. Let's look at a complete example that demonstrates all five principles working in harmony.
+
+### Real-World Example: E-Commerce Order Processing System
+
+```csharp
+// Abstractions (following DIP)
+public interface IOrderRepository
+{
+    Task<Order> GetByIdAsync(int orderId);
+    Task SaveAsync(Order order);
+}
+
+public interface IPaymentProcessor
+{
+    Task<PaymentResult> ProcessPaymentAsync(Order order);
+}
+
+public interface IInventoryService
+{
+    Task<bool> CheckStockAsync(int productId, int quantity);
+    Task ReserveStockAsync(int productId, int quantity);
+}
+
+public interface INotificationService
+{
+    Task SendAsync(string recipient, string message);
+}
+
+public interface ILogger
+{
+    void LogInfo(string message);
+    void LogError(string message, Exception ex);
+}
+
+// OrderProcessor follows SRP - it only orchestrates the order process
+public class OrderProcessor
+{
+    private readonly IOrderRepository _orderRepository;
+    private readonly IPaymentProcessor _paymentProcessor;
+    private readonly IInventoryService _inventoryService;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger _logger;
+
+    // Following DIP - depends on abstractions, not concrete implementations
+    public OrderProcessor(
+        IOrderRepository orderRepository,
+        IPaymentProcessor paymentProcessor,
+        IInventoryService inventoryService,
+        INotificationService notificationService,
+        ILogger logger)
+    {
+        _orderRepository = orderRepository;
+        _paymentProcessor = paymentProcessor;
+        _inventoryService = inventoryService;
+        _notificationService = notificationService;
+        _logger = logger;
+    }
+
+    public async Task<OrderResult> ProcessOrderAsync(int orderId)
+    {
+        try
+        {
+            var order = await _orderRepository.GetByIdAsync(orderId);
+            
+            // Check inventory
+            var hasStock = await _inventoryService.CheckStockAsync(
+                order.ProductId, 
+                order.Quantity);
+            
+            if (!hasStock)
+            {
+                return OrderResult.Failure("Insufficient stock");
+            }
+
+            // Process payment
+            var paymentResult = await _paymentProcessor.ProcessPaymentAsync(order);
+            
+            if (!paymentResult.Success)
+            {
+                return OrderResult.Failure("Payment failed");
+            }
+
+            // Reserve stock
+            await _inventoryService.ReserveStockAsync(order.ProductId, order.Quantity);
+            
+            // Update order status
+            order.Status = OrderStatus.Confirmed;
+            await _orderRepository.SaveAsync(order);
+            
+            // Send notification
+            await _notificationService.SendAsync(
+                order.CustomerEmail, 
+                $"Order {orderId} confirmed");
+            
+            _logger.LogInfo($"Order {orderId} processed successfully");
+            
+            return OrderResult.Success(order);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error processing order {orderId}", ex);
+            return OrderResult.Failure("An error occurred");
+        }
+    }
+}
+
+// Following OCP - new payment methods can be added without modifying existing code
+public abstract class PaymentProcessorBase : IPaymentProcessor
+{
+    protected readonly ILogger _logger;
+
+    protected PaymentProcessorBase(ILogger logger)
+    {
+        _logger = logger;
+    }
+
+    // Template method pattern - subclasses override specific behavior
+    public async Task<PaymentResult> ProcessPaymentAsync(Order order)
+    {
+        _logger.LogInfo($"Processing payment for order {order.Id}");
+        
+        var result = await ProcessPaymentInternalAsync(order);
+        
+        if (result.Success)
+        {
+            _logger.LogInfo($"Payment successful for order {order.Id}");
+        }
+        else
+        {
+            _logger.LogError($"Payment failed for order {order.Id}", null);
+        }
+        
+        return result;
+    }
+
+    protected abstract Task<PaymentResult> ProcessPaymentInternalAsync(Order order);
+}
+
+// Extending functionality without modifying existing code (OCP)
+public class CreditCardPaymentProcessor : PaymentProcessorBase
+{
+    public CreditCardPaymentProcessor(ILogger logger) : base(logger) { }
+
+    protected override async Task<PaymentResult> ProcessPaymentInternalAsync(Order order)
+    {
+        // Credit card specific processing
+        await Task.Delay(100); // Simulate API call
+        return new PaymentResult { Success = true, TransactionId = Guid.NewGuid().ToString() };
+    }
+}
+
+public class PayPalPaymentProcessor : PaymentProcessorBase
+{
+    public PayPalPaymentProcessor(ILogger logger) : base(logger) { }
+
+    protected override async Task<PaymentResult> ProcessPaymentInternalAsync(Order order)
+    {
+        // PayPal specific processing
+        await Task.Delay(100); // Simulate API call
+        return new PaymentResult { Success = true, TransactionId = Guid.NewGuid().ToString() };
+    }
+}
+
+// Following ISP - notification service has focused interfaces
+public interface IEmailNotification
+{
+    Task SendEmailAsync(string recipient, string subject, string body);
+}
+
+public interface ISmsNotification
+{
+    Task SendSmsAsync(string phoneNumber, string message);
+}
+
+// Clients only implement what they need (ISP)
+public class EmailNotificationService : INotificationService, IEmailNotification
+{
+    public async Task SendAsync(string recipient, string message)
+    {
+        await SendEmailAsync(recipient, "Notification", message);
+    }
+
+    public async Task SendEmailAsync(string recipient, string subject, string body)
+    {
+        // Email sending logic
+        await Task.Delay(50);
+        Console.WriteLine($"Email sent to {recipient}: {body}");
+    }
+}
+
+public class SmsNotificationService : INotificationService, ISmsNotification
+{
+    public async Task SendAsync(string recipient, string message)
+    {
+        await SendSmsAsync(recipient, message);
+    }
+
+    public async Task SendSmsAsync(string phoneNumber, string message)
+    {
+        // SMS sending logic
+        await Task.Delay(50);
+        Console.WriteLine($"SMS sent to {phoneNumber}: {message}");
+    }
+}
+
+// Following LSP - all notification services can substitute for INotificationService
+public class MultiChannelNotificationService : INotificationService
+{
+    private readonly IEmailNotification _emailService;
+    private readonly ISmsNotification _smsService;
+
+    public MultiChannelNotificationService(
+        IEmailNotification emailService,
+        ISmsNotification smsService)
+    {
+        _emailService = emailService;
+        _smsService = smsService;
+    }
+
+    public async Task SendAsync(string recipient, string message)
+    {
+        // Send through multiple channels
+        await _emailService.SendEmailAsync(recipient, "Notification", message);
+        await _smsService.SendSmsAsync(recipient, message);
+    }
+}
+```
+
+This example demonstrates how all five SOLID principles work together to create a maintainable, testable, and extensible system. The code is modular, each class has a clear purpose, and you can easily add new features or swap implementations without breaking existing functionality.
+
+---
+
+## Benefits of Following SOLID Principles
+
+When you consistently apply SOLID principles to your C# code, you'll experience several significant benefits:
+
+**Maintainability**: Code is easier to understand and modify because each class has a clear, focused purpose. When bugs occur, you know exactly where to look because responsibilities are well-defined.
+
+**Testability**: Because classes depend on abstractions rather than concrete implementations, you can easily create mock objects for testing. Each class can be tested in isolation without requiring complex setup.
+
+**Flexibility**: You can swap implementations, add new features, and extend functionality without modifying existing code. This reduces the risk of introducing bugs when making changes.
+
+**Reusability**: Well-designed classes with single responsibilities and clear interfaces are easier to reuse in different contexts. You're not forced to bring in unnecessary dependencies.
+
+**Collaboration**: When code follows well-known principles, new team members can understand the architecture more quickly. The principles provide a common vocabulary for discussing design decisions.
+
+---
+
+## Common Pitfalls and How to Avoid Them
+
+**Over-engineering**: Don't create abstractions for every single class from the start. Apply SOLID principles when complexity justifies them. Start simple and refactor toward SOLID as your code evolves.
+
+**Interface explosion**: While ISP encourages focused interfaces, don't create a separate interface for every single method. Group related operations into cohesive interfaces.
+
+**Ignoring context**: SOLID principles are guidelines, not absolute rules. Sometimes pragmatic solutions that slightly bend these principles are appropriate, especially in small projects or prototypes.
+
+**Forgetting the why**: Always remember that these principles serve the goal of creating maintainable, flexible code. If following a principle makes your code more complex without clear benefit, reconsider your approach.
+
+---
+
+## Conclusion
+
+SOLID principles are not just academic concepts but practical guidelines that lead to better software design. They work together to create code that is easier to maintain, test, and extend over time. As you practice applying these principles, you'll develop an intuition for recognizing violations and structuring your code in ways that naturally follow these patterns.
+
+Start by recognizing violations in your existing code, then practice refactoring toward SOLID designs. Over time, you'll find yourself naturally writing code that adheres to these principles, and you'll appreciate the benefits in every project you work on.
+
+Remember that mastering SOLID is a journey, not a destination. Even experienced developers continually refine their understanding and application of these principles. The key is to keep learning, practicing, and applying these concepts in your daily work.

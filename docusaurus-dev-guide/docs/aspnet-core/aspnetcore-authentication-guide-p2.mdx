@@ -4,15 +4,1538 @@ sidebar_label: "Authentication Guide P2"
 sidebar_position: 8
 tags: [aspnet, authentication, security]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic />
 
 # Understanding Authentication in ASP.NET Core: A Practical Guide (Part 2)
 
 Continuation of the ASP.NET Core authentication deep dive — JWT bearer tokens, OAuth integration, role-based and policy-based authorization.
 
-<iframe
-  src="https://claude.ai/public/artifacts/63ebb271-091f-477b-84e4-7a2db0eec4ef/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="Understanding Authentication in ASP.NET Core Part 2"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+## Comparing Authentication Methods
+
+Now that we've explored each method individually, let's look at how they compare across different dimensions. Understanding these trade-offs will help you make the right choice for your specific scenario.
+
+### Security Comparison
+
+From a security perspective, all methods can be secure when properly implemented over HTTPS, but they have different risk profiles and attack surfaces.
+
+**Basic Authentication** has the highest risk because credentials are sent with every request. Even though they're Base64 encoded, this provides zero security—anyone intercepting the request can decode it instantly. The only thing protecting you is HTTPS encryption. There's no concept of token expiration, so credentials remain valid until the password is changed. If someone captures your credentials, they can use them indefinitely. Think of it as carrying your actual passport everywhere—if it's stolen, you're in trouble.
+
+**API Keys** are more secure than Basic Authentication because you're not sending your actual password. Keys can be rotated without changing user credentials, and they can be scoped to specific permissions. However, like Basic Auth, if someone steals your API key, they can use it until you revoke it. The security improvement comes from isolation—a compromised API key doesn't expose your user account credentials. It's like having a valet key for your car instead of your main key ring.
+
+**Bearer Tokens (opaque)** offer better security because they can be short-lived and are revocable. You can implement them with refresh tokens, allowing for automatic rotation. The tokens themselves are meaningless random strings, so even if intercepted, they reveal nothing about the user. However, they require server-side storage and validation, which can be a performance consideration. They're like temporary access badges that expire and need to be renewed.
+
+**JWT Bearer Tokens** provide stateless security with built-in expiration. The signature prevents tampering, and claims can be validated without a database lookup. However, JWTs can't be easily revoked before expiration (unless you maintain a blacklist, defeating the stateless benefit). Also, if you store sensitive information in the JWT, remember that the payload is only Base64 encoded, not encrypted—anyone can read it. JWTs are like signed documents that prove authenticity but can be read by anyone.
+
+**Cookie Authentication** with properly configured secure, HttpOnly, SameSite cookies provides excellent protection against XSS attacks since JavaScript can't access the cookies. However, cookies are automatically sent with every request, making them vulnerable to CSRF if not properly protected with anti-forgery tokens. The session data stored on the server can contain sensitive information safely. Cookies are like a trusted relationship where the server remembers you.
+
+**OAuth/OIDC** delegates security to specialized providers who employ security teams, use multi-factor authentication, monitor for suspicious activity, and keep up with the latest threats. This is generally more secure than implementing your own authentication, following the principle of "don't roll your own crypto." However, you're also trusting a third party with your users' authentication. Think of it as hiring a professional security company instead of being your own security guard.
+
+**SAML** provides strong security through XML signatures and optional encryption. However, the complexity of XML processing has historically led to various implementation vulnerabilities. When properly implemented, it's very secure, but the complexity means more surface area for mistakes. It's like a complex lock system—very secure when installed correctly, but easy to mess up.
+
+### Performance Comparison
+
+The performance characteristics of different authentication methods vary significantly, and understanding these differences is crucial for building scalable applications.
+
+**Basic Authentication** has the lowest overhead on the server side. Each request requires decoding the Base64 credentials and validating them against your user store (typically a database lookup or cache check). If you cache user credentials properly, this can be quite fast. However, you're doing a credential check on every single request, which adds up. For a low-traffic API, this is negligible. For a high-traffic system, it can become a bottleneck. The network overhead is minimal—just an additional header.
+
+**API Key Authentication** performance depends heavily on your validation strategy. If you're looking up keys in a database on every request, it will be slow. However, API keys are perfect candidates for caching since they don't change often. With a good caching strategy (using Redis or in-memory cache), validation can be extremely fast—often just a cache lookup. The key is to cache the API key information including permissions, so you're not hitting the database constantly. Network overhead is the same as Basic Auth—just a header.
+
+**Bearer Tokens (opaque)** require server-side storage and lookup on every request. Without caching, this means a database or Redis lookup per request. With caching, performance can be good, but you need to ensure cache consistency across multiple servers. The advantage is that you can store rich session data, but the trade-off is that storage and lookup cost. For distributed systems, you'll need a shared cache (like Redis) or database, adding network hops.
+
+**JWT Bearer Tokens** offer excellent performance for validation because they're stateless. Validating a JWT involves verifying the signature (a cryptographic operation) but no database lookup. Signature verification is computationally more expensive than a cache lookup but cheaper than a database query. For most applications, this is negligible. The real performance win is avoiding database lookups entirely, which makes JWTs scale horizontally very well. However, JWTs are larger than session IDs or opaque tokens, so there's more data transmitted with each request.
+
+**Cookie Authentication** with server-side sessions requires session storage lookup (typically from cache or database). However, since sessions are usually cached in memory or Redis, this is very fast. The cookie itself is small (just a session ID), so network overhead is minimal. The main performance consideration is session storage capacity—you need enough memory or Redis capacity to store all active sessions.
+
+**OAuth/OIDC** has high latency during the initial authentication flow due to redirects to the identity provider and back. However, this is a one-time cost per session. Once authenticated, subsequent requests use cached tokens locally, making the performance similar to JWT or cookies depending on your implementation. The initial authentication might take several seconds due to network round trips, but this happens rarely (once per login session).
+
+**SAML** has significant overhead due to XML parsing and signature verification. SAML assertions are much larger than JWTs (XML is verbose), and parsing XML is slower than parsing JSON. Like OAuth, the main cost is during authentication. Subsequent requests typically use server-side sessions (cookies), making them fast. However, the initial SAML exchange can be noticeably slow, especially with large assertions containing many attributes.
+
+### Ease of Implementation
+
+The implementation complexity varies greatly between methods, affecting both initial development time and ongoing maintenance.
+
+**Basic Authentication** is the simplest to implement. You can have a working implementation in under 100 lines of code. The authentication handler just decodes Base64, splits on the colon, and validates credentials. There's no token management, no refresh logic, no session storage. However, this simplicity comes at the cost of security and features. It's perfect for getting something working quickly in development, but you'll likely need to upgrade it for production.
+
+**API Key Authentication** is also relatively simple. The complexity comes from key generation and storage. You need to securely generate random keys, hash them for storage (don't store plain keys in your database!), and implement key management features like creation, listing, and revocation. The authentication handler itself is straightforward—just validate the key. The real work is building the key management UI and API. Expect this to take a few days for a basic implementation, longer if you want features like key rotation, expiration, and scoped permissions.
+
+**Bearer Tokens (opaque)** have moderate complexity. You need to implement token generation, storage, validation, and revocation. If you add refresh tokens (which you should for good UX), that's additional logic. You'll need a database table or cache for storing tokens, and you need to handle token expiration and cleanup. The authentication handler is simple, but the token lifecycle management adds complexity. Budget a week for a solid implementation with refresh tokens.
+
+**JWT Bearer Tokens** have higher initial complexity due to cryptographic operations. You need to understand JWT structure, choose the right algorithm (HS256 for symmetric, RS256 for asymmetric), manage signing keys securely, and handle token expiration properly. Libraries make this easier, but you still need to understand the concepts. The upside is that once implemented, JWTs are stateless and simple to scale. Budget several days to a week for learning and implementing properly, but it's well worth it for the scalability benefits.
+
+**Cookie Authentication** with ASP.NET Core Identity is perhaps the easiest for full-featured authentication because Microsoft provides most of it out of the box. You get user registration, password reset, email confirmation, two-factor authentication, and more with minimal code. The downside is that you're locked into the Identity framework's approach. For a custom implementation without Identity, cookies are moderately complex—you need to understand session management, cookie security flags, and CSRF protection.
+
+**OAuth/OIDC** implementation difficulty depends entirely on whether you're building the provider or just integrating with one. Integrating with an existing provider (like "Login with Google") is relatively easy—ASP.NET Core provides good support, and you can have it working in a few hours. Building your own OAuth server is extremely complex and generally not recommended—use a third-party solution like IdentityServer, Auth0, or Okta instead. Don't try to build this yourself unless you have specific requirements that commercial solutions can't meet.
+
+**SAML** is notoriously complex to implement from scratch. The SAML specification is dense, XML signatures are tricky, and there are many edge cases. Fortunately, libraries like Sustainsys.Saml2 handle most of the complexity. With a library, implementation is moderate—you configure your service provider settings, add the identity provider metadata, and handle the assertion response. Without a library, don't even try—SAML implementation is months of work and fraught with security pitfalls. Even with a library, budget several days to understand SAML concepts and get everything configured correctly.
+
+### Scalability and Statelessness
+
+Different authentication methods have vastly different scaling characteristics.
+
+**Stateless methods** (Basic Auth, API Keys, JWT) scale horizontally very easily. Any server can validate the credentials or token without coordinating with other servers. You don't need sticky sessions or shared session storage. This makes them perfect for microservices, serverless, and globally distributed architectures. The trade-off is less control—you can't easily revoke access until the token expires.
+
+**Stateful methods** (Cookies with sessions, opaque bearer tokens) require shared state across servers. This means either sticky sessions (always routing a user to the same server) or a shared session store like Redis or a database. Sticky sessions complicate load balancing and make deployments trickier. Shared session stores add infrastructure complexity and a potential single point of failure. However, you gain the ability to invalidate sessions immediately and store rich session data server-side.
+
+For most modern applications, the trend is toward stateless authentication for better scalability, with refresh tokens providing a way to revoke access when needed.
+
+### Use Case Summary Table
+
+| Method | Best For | Avoid For | Complexity | Performance | Revocability |
+|--------|----------|-----------|------------|-------------|--------------|
+| **Basic Auth** | Internal tools, development, simple scripts | Public APIs, production user auth | Very Low | Good (with cache) | None |
+| **API Keys** | Service-to-service, third-party integrations | User authentication, frequent rotation needed | Low | Excellent (cached) | Good |
+| **Bearer (opaque)** | Mobile apps, SPAs needing revocation | Microservices, serverless | Medium | Good (needs cache) | Excellent |
+| **JWT** | Microservices, SPAs, mobile apps, distributed systems | Cases requiring immediate revocation | Medium-High | Excellent | Poor |
+| **Cookies** | Traditional web apps, server-rendered pages | Cross-domain, mobile apps, public APIs | Low (with Identity) | Excellent | Excellent |
+| **OAuth/OIDC** | Social login, enterprise SSO, third-party access | Simple internal apps | High (provider) Low (client) | Good | Good |
+| **SAML** | Enterprise SSO, legacy systems | New projects, mobile apps | Very High | Moderate | Good |
+
+---
+
+## Practical Recommendations
+
+### For a Traditional MVC or Razor Pages Web App
+
+Use cookie-based authentication with ASP.NET Core Identity. It's simple, well-integrated, and handles everything you need including user registration, password reset, and two-factor authentication.
+
+```csharp
+builder.Services.AddDefaultIdentity<IdentityUser>(options => 
+{
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 8;
+    options.SignIn.RequireConfirmedEmail = true;
+    options.Lockout.MaxFailedAccessAttempts = 5;
+})
+.AddEntityFrameworkStores<ApplicationDbContext>();
+```
+
+### For a SPA with a Dedicated API Backend
+
+If your SPA and API are on the same domain, use cookie-based authentication with anti-forgery tokens. The automatic cookie handling by the browser actually makes this more secure than manually managing tokens in JavaScript.
+
+If they're on different domains, use JWT bearer tokens. Store the JWT in memory (in a JavaScript variable), not in localStorage to avoid XSS attacks. Implement refresh tokens so users don't have to log in frequently.
+
+### For a Mobile App or Third-Party API Consumers
+
+Use JWT bearer tokens exclusively. Mobile apps can't use cookies effectively, and third parties need a standard way to authenticate. Implement token refresh to balance security and user experience. Consider using asymmetric keys (RS256) so you can distribute the public key for verification without exposing the signing key.
+
+### For Public APIs with Rate Limiting
+
+Use API Keys. They're simple for developers to use, easy to revoke if abused, and can be tied to specific rate limits and quotas. Generate keys with sufficient entropy (at least 256 bits), hash them before storage, and provide a clear key management UI.
+
+### For Enterprise SSO Integration
+
+Use whatever your identity provider supports. If they offer OIDC, use that—it's more modern and easier to work with. If they only support SAML, use SAML with a good library like Sustainsys.Saml2. Don't try to force a square peg into a round hole.
+
+### For Microservices Communication
+
+For service-to-service communication within your infrastructure, use either:
+- **API Keys** for simplicity and good performance with caching
+- **JWT tokens** for truly stateless authentication across services
+- **Mutual TLS** for the highest security, where services authenticate each other using certificates
+
+For user-initiated requests flowing through microservices, use JWT tokens so each service can validate the user independently without shared session state.
+
+---
+
+## Combining Multiple Methods
+
+Real-world applications often need multiple authentication methods. Here's how to support several in the same application:
+
+```csharp
+// In Program.cs
+builder.Services.AddAuthentication(options =>
+{
+    // Default to JWT for API endpoints
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    // JWT configuration
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+    };
+})
+.AddCookie(options =>
+{
+    // Cookie configuration for web pages
+    options.LoginPath = "/Account/Login";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+})
+.AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+    "ApiKey", null);
+
+// Create a policy that accepts any of these methods
+builder.Services.AddAuthorization(options =>
+{
+    var defaultPolicy = new AuthorizationPolicyBuilder(
+        JwtBearerDefaults.AuthenticationScheme,
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        "ApiKey")
+        .RequireAuthenticatedUser()
+        .Build();
+    
+    options.DefaultPolicy = defaultPolicy;
+});
+```
+
+With this configuration, you can use the `[Authorize]` attribute and ASP.NET Core will automatically try all three authentication methods. You can also specify which method to use for specific endpoints:
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class DataController : ControllerBase
+{
+    // Accepts any authentication method
+    [HttpGet("flexible")]
+    [Authorize]
+    public IActionResult GetFlexible()
+    {
+        return Ok("Authenticated via any method");
+    }
+    
+    // Only accepts JWT
+    [HttpGet("jwt-only")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public IActionResult GetJwtOnly()
+    {
+        return Ok("Authenticated via JWT only");
+    }
+    
+    // Only accepts API Key
+    [HttpGet("apikey-only")]
+    [Authorize(AuthenticationSchemes = "ApiKey")]
+    public IActionResult GetApiKeyOnly()
+    {
+        return Ok("Authenticated via API Key only");
+    }
+}
+```
+
+---
+
+## Security Best Practices Across All Methods
+
+Regardless of which authentication method you choose, follow these universal security practices:
+
+### Always Use HTTPS
+
+This cannot be emphasized enough. Every authentication method we've discussed transmits credentials or tokens that, if intercepted, can be used by an attacker. HTTPS encrypts the entire communication channel. Configure your ASP.NET Core app to redirect HTTP to HTTPS and use HSTS:
+
+```csharp
+app.UseHttpsRedirection();
+app.UseHsts(); // HTTP Strict Transport Security
+```
+
+### Store Secrets Securely
+
+Never hardcode secrets in your application. Use ASP.NET Core's configuration system with Azure Key Vault, AWS Secrets Manager, or environment variables:
+
+```csharp
+// Bad - never do this
+var jwtKey = "MySecretKey123";
+
+// Good - use configuration
+var jwtKey = builder.Configuration["Jwt:SecretKey"];
+
+// Better - use Azure Key Vault or similar
+builder.Configuration.AddAzureKeyVault(/* ... */);
+```
+
+### Implement Rate Limiting
+
+Protect against brute force attacks by limiting authentication attempts:
+
+```csharp
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("auth", opt =>
+    {
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.PermitLimit = 5;
+    });
+});
+
+// Apply to login endpoints
+[EnableRateLimiting("auth")]
+[HttpPost("login")]
+public IActionResult Login(/* ... */) { }
+```
+
+### Use Strong Password Policies
+
+If you're handling user passwords, enforce strong requirements:
+
+```csharp
+builder.Services.Configure<IdentityOptions>(options =>
+{
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 12;
+    options.Password.RequireNonAlphanumeric = true;
+    options.Password.RequireUppercase = true;
+    options.Password.RequireLowercase = true;
+    options.Password.RequiredUniqueChars = 4;
+});
+```
+
+### Hash and Salt Passwords
+
+Never store passwords in plain text. Use a strong hashing algorithm with a unique salt per password. ASP.NET Core Identity handles this automatically, but if you're rolling your own:
+
+```csharp
+using Microsoft.AspNetCore.Cryptography.KeyDerivation;
+
+public string HashPassword(string password)
+{
+    // Generate a random salt
+    byte[] salt = new byte[128 / 8];
+    using (var rng = RandomNumberGenerator.Create())
+    {
+        rng.GetBytes(salt);
+    }
+    
+    // Hash the password with PBKDF2
+    string hashed = Convert.ToBase64String(KeyDerivation.Pbkdf2(
+        password: password,
+        salt: salt,
+        prf: KeyDerivationPrf.HMACSHA256,
+        iterationCount: 100000,
+        numBytesRequested: 256 / 8));
+        
+    // Store both salt and hash
+    return $"{Convert.ToBase64String(salt)}.{hashed}";
+}
+```
+
+### Implement Proper Logout
+
+Ensure users can actually log out. For cookies, clear the cookie. For tokens, consider maintaining a blacklist (which adds complexity) or keep token lifetimes short with refresh tokens.
+
+### Add Multi-Factor Authentication
+
+For sensitive applications, add MFA using ASP.NET Core Identity's built-in support or a third-party provider like Google Authenticator.
+
+---
+
+## Conclusion
+
+Authentication in ASP.NET Core is powerful and flexible, offering multiple approaches for different scenarios. The key is understanding your specific requirements and constraints.
+
+**Basic Authentication** is quick to implement but insecure without HTTPS. Use it for development or internal tools only.
+
+**API Keys** provide simple service-to-service authentication with good performance. They're perfect for public APIs and third-party integrations.
+
+**Bearer Tokens** (opaque) offer revocability and control at the cost of requiring server-side storage. They're a good middle ground between stateless and stateful.
+
+**JWT Bearer Tokens** enable stateless, scalable authentication perfect for distributed systems and modern SPAs. The trade-off is difficulty in revocation.
+
+**Cookie Authentication** remains the best choice for traditional web applications with server-rendered pages, offering security and simplicity.
+
+**OAuth/OIDC** delegates authentication to specialized providers, perfect for social login and enterprise SSO.
+
+**SAML** integrates with legacy enterprise systems but is complex and being superseded by OIDC.
+
+Remember that security is a journey, not a destination. Whichever method you choose:
+- Always use HTTPS
+- Keep your libraries and frameworks updated
+- Implement proper logging and monitoring
+- Consider adding MFA for sensitive operations
+- Follow the principle of least privilege
+- Test your authentication thoroughly
+
+Your users trust you with their identity and data. Choose wisely, implement carefully, and maintain vigilantly. The right authentication method, properly implemented, is the foundation of a secure application.# Understanding Authentication in ASP.NET Core: A Practical Guide
+
+## What is Authentication, Really?
+
+Before diving into the technical details, let's understand what we're actually trying to accomplish. Authentication is simply the process of figuring out who someone is. Think of it like showing your ID at the airport—you're proving your identity. Authorization, on the other hand, is what you're allowed to do once your identity is confirmed (like which gates you can access).
+
+In ASP.NET Core, authentication happens through something called middleware, which is basically code that runs between when a request arrives and when your application processes it. The framework gives you several ways to authenticate users, each suited for different scenarios.
+
+---
+
+## Understanding Authentication Types: The Foundation
+
+Before we dive into specific methods, it's helpful to understand that authentication in web applications falls into a few fundamental patterns. At the most basic level, you're proving who you are by providing credentials. How those credentials are formatted, transmitted, and validated is what distinguishes different authentication methods.
+
+Some methods like Basic Authentication and API Keys are relatively simple and stateless. Others like Cookie authentication maintain state on the server. Bearer token authentication (including JWT) sits somewhere in between, offering stateless authentication with more sophistication than Basic auth. Let's explore each approach.
+
+---
+
+## The Main Authentication Methods
+
+### 1. Basic Authentication
+
+**How It Works**
+
+Basic Authentication is the simplest form of HTTP authentication, defined way back in 1999. Think of it like showing your driver's license every single time you want to enter a building. You provide your username and password with every request, encoded in Base64 (which is encoding, not encryption—an important distinction).
+
+When you make a request with Basic Authentication, your browser or client combines your username and password with a colon (like "username:password"), encodes this string in Base64, and sends it in an HTTP header called "Authorization" with the prefix "Basic". The server decodes this header, extracts the credentials, and validates them against its user database.
+
+**When to Use It**
+
+Basic Authentication is appropriate for internal tools, development environments, or simple scenarios where you need something quick and the communication is over HTTPS. It's commonly used for API keys in simple scenarios (companies like Stripe and Mailchimp use variations of this approach). However, it should never be used over plain HTTP because the Base64 encoding can be easily decoded.
+
+**Basic Example**
+
+```csharp
+// First, create a custom authentication handler
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Encodings.Web;
+
+public class BasicAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+{
+    private readonly IUserService _userService;
+
+    public BasicAuthenticationHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder,
+        ISystemClock clock,
+        IUserService userService)
+        : base(options, logger, encoder, clock)
+    {
+        _userService = userService;
+    }
+
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        // Check if Authorization header exists
+        if (!Request.Headers.ContainsKey("Authorization"))
+        {
+            return AuthenticateResult.Fail("Missing Authorization Header");
+        }
+
+        try
+        {
+            var authHeader = Request.Headers["Authorization"].ToString();
+            
+            // Must start with "Basic "
+            if (!authHeader.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+            {
+                return AuthenticateResult.Fail("Invalid Authorization Header");
+            }
+
+            // Extract and decode the Base64 credentials
+            var encodedCredentials = authHeader.Substring("Basic ".Length).Trim();
+            var decodedCredentials = Encoding.UTF8.GetString(
+                Convert.FromBase64String(encodedCredentials));
+            
+            // Split username and password (format is "username:password")
+            var credentials = decodedCredentials.Split(':', 2);
+            var username = credentials[0];
+            var password = credentials[1];
+
+            // Validate credentials against your user service
+            var user = await _userService.ValidateCredentialsAsync(username, password);
+            
+            if (user == null)
+            {
+                return AuthenticateResult.Fail("Invalid Username or Password");
+            }
+
+            // Create claims for the authenticated user
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim(ClaimTypes.Email, user.Email)
+            };
+
+            var identity = new ClaimsIdentity(claims, Scheme.Name);
+            var principal = new ClaimsPrincipal(identity);
+            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+
+            return AuthenticateResult.Success(ticket);
+        }
+        catch (Exception ex)
+        {
+            return AuthenticateResult.Fail($"Authentication failed: {ex.Message}");
+        }
+    }
+}
+```
+
+```csharp
+// In Program.cs, register the authentication handler
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Basic Authentication
+builder.Services.AddAuthentication("BasicAuthentication")
+    .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>(
+        "BasicAuthentication", null);
+
+builder.Services.AddAuthorization();
+
+// Register your user service
+builder.Services.AddScoped<IUserService, UserService>();
+
+var app = builder.Build();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+app.Run();
+```
+
+```csharp
+// Using it in a controller
+[ApiController]
+[Route("api/[controller]")]
+public class SecureController : ControllerBase
+{
+    [HttpGet]
+    [Authorize(AuthenticationSchemes = "BasicAuthentication")]
+    public IActionResult GetSecureData()
+    {
+        var username = User.Identity.Name;
+        return Ok($"Hello {username}, you are authenticated!");
+    }
+}
+```
+
+```csharp
+// How clients send Basic Authentication
+// In C# HttpClient:
+var client = new HttpClient();
+var credentials = Convert.ToBase64String(
+    Encoding.ASCII.GetBytes($"{username}:{password}"));
+client.DefaultRequestHeaders.Authorization = 
+    new AuthenticationHeaderValue("Basic", credentials);
+
+// The actual HTTP header looks like:
+// Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
+```
+
+**Pros and Cons**
+
+Basic Authentication is incredibly simple to implement and understand. It's supported by virtually every HTTP client and browser. There's no session management required, making it truly stateless. It works well for simple scenarios and quick prototypes.
+
+However, credentials are sent with every single request, which increases the risk of interception. The Base64 encoding provides no security—it's trivial to decode. There's no built-in mechanism for logout since there's no session. It's vulnerable to replay attacks if not used over HTTPS. Most importantly, you must always use HTTPS with Basic Authentication; using it over HTTP is essentially sending passwords in plain text.
+
+---
+
+### 2. API Key Authentication
+
+**How It Works**
+
+API Key authentication is like having a special access card instead of showing your ID each time. Rather than sending your username and password with every request, you get a unique key (usually a long random string) that identifies you and your permissions. This key can be passed in various ways: as a custom header (like "X-API-Key"), in the Authorization header, or even as a query parameter.
+
+The key difference between API keys and Basic Authentication is that API keys don't represent direct user credentials. They're tokens that have been pre-generated and can be revoked without changing your password. They often have specific scopes or permissions attached to them.
+
+**When to Use It**
+
+API Keys are perfect for server-to-server communication, allowing third-party developers to access your API, or providing programmatic access to services. They're commonly used in scenarios where a mobile app or external system needs to call your API without a user being directly involved. Think of how you might use Google Maps API or SendGrid API—you register, get an API key, and use it for all subsequent requests.
+
+**Basic Example**
+
+```csharp
+// Create a custom API Key authentication handler
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
+
+public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+{
+    private const string ApiKeyHeaderName = "X-API-Key";
+    private readonly IApiKeyValidator _apiKeyValidator;
+
+    public ApiKeyAuthenticationHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder,
+        ISystemClock clock,
+        IApiKeyValidator apiKeyValidator)
+        : base(options, logger, encoder, clock)
+    {
+        _apiKeyValidator = apiKeyValidator;
+    }
+
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        // Check if API key header exists
+        if (!Request.Headers.TryGetValue(ApiKeyHeaderName, out var apiKeyHeaderValues))
+        {
+            return AuthenticateResult.Fail("Missing API Key");
+        }
+
+        var providedApiKey = apiKeyHeaderValues.FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(providedApiKey))
+        {
+            return AuthenticateResult.Fail("Invalid API Key");
+        }
+
+        // Validate the API key and get the associated client information
+        var apiKeyInfo = await _apiKeyValidator.ValidateAsync(providedApiKey);
+
+        if (apiKeyInfo == null)
+        {
+            return AuthenticateResult.Fail("Invalid API Key");
+        }
+
+        // Create claims based on the API key information
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.Name, apiKeyInfo.ClientName),
+            new Claim("ApiKeyId", apiKeyInfo.Id.ToString()),
+            new Claim("ClientId", apiKeyInfo.ClientId)
+        };
+
+        // Add any scopes/permissions as claims
+        foreach (var scope in apiKeyInfo.Scopes)
+        {
+            claims.Add(new Claim("scope", scope));
+        }
+
+        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var principal = new ClaimsPrincipal(identity);
+        var ticket = new AuthenticationTicket(principal, Scheme.Name);
+
+        return AuthenticateResult.Success(ticket);
+    }
+}
+```
+
+```csharp
+// API Key validator interface and implementation
+public interface IApiKeyValidator
+{
+    Task<ApiKeyInfo> ValidateAsync(string apiKey);
+}
+
+public class ApiKeyInfo
+{
+    public int Id { get; set; }
+    public string ClientId { get; set; }
+    public string ClientName { get; set; }
+    public List<string> Scopes { get; set; }
+    public DateTime CreatedDate { get; set; }
+    public DateTime? ExpirationDate { get; set; }
+}
+
+public class ApiKeyValidator : IApiKeyValidator
+{
+    private readonly ApplicationDbContext _context;
+    private readonly IMemoryCache _cache;
+
+    public ApiKeyValidator(ApplicationDbContext context, IMemoryCache cache)
+    {
+        _context = context;
+        _cache = cache;
+    }
+
+    public async Task<ApiKeyInfo> ValidateAsync(string apiKey)
+    {
+        // Check cache first for performance
+        var cacheKey = $"ApiKey_{apiKey}";
+        
+        if (_cache.TryGetValue(cacheKey, out ApiKeyInfo cachedInfo))
+        {
+            return cachedInfo;
+        }
+
+        // Hash the API key before database lookup (store hashed keys in DB)
+        var hashedKey = HashApiKey(apiKey);
+
+        var keyInfo = await _context.ApiKeys
+            .Where(k => k.KeyHash == hashedKey && 
+                       k.IsActive && 
+                       (k.ExpirationDate == null || k.ExpirationDate > DateTime.UtcNow))
+            .Select(k => new ApiKeyInfo
+            {
+                Id = k.Id,
+                ClientId = k.ClientId,
+                ClientName = k.ClientName,
+                Scopes = k.Scopes.Split(',').ToList(),
+                CreatedDate = k.CreatedDate,
+                ExpirationDate = k.ExpirationDate
+            })
+            .FirstOrDefaultAsync();
+
+        if (keyInfo != null)
+        {
+            // Cache for 5 minutes
+            _cache.Set(cacheKey, keyInfo, TimeSpan.FromMinutes(5));
+        }
+
+        return keyInfo;
+    }
+
+    private string HashApiKey(string apiKey)
+    {
+        using var sha256 = SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(apiKey));
+        return Convert.ToBase64String(hashedBytes);
+    }
+}
+```
+
+```csharp
+// In Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication("ApiKey")
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>("ApiKey", null);
+
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<IApiKeyValidator, ApiKeyValidator>();
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+```
+
+```csharp
+// API Key generation helper
+public static class ApiKeyGenerator
+{
+    public static string GenerateApiKey()
+    {
+        // Generate a secure random API key (256 bits = 32 bytes)
+        var randomBytes = new byte[32];
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(randomBytes);
+        }
+        
+        // Convert to a URL-safe base64 string
+        return Convert.ToBase64String(randomBytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
+}
+
+// Example usage in a controller to generate keys
+[HttpPost("generate-key")]
+[Authorize] // Only authenticated users can generate keys
+public async Task<IActionResult> GenerateApiKey(string clientName)
+{
+    var apiKey = ApiKeyGenerator.GenerateApiKey();
+    var hashedKey = HashApiKey(apiKey);
+    
+    var newApiKey = new ApiKey
+    {
+        ClientId = Guid.NewGuid().ToString(),
+        ClientName = clientName,
+        KeyHash = hashedKey,
+        CreatedDate = DateTime.UtcNow,
+        ExpirationDate = DateTime.UtcNow.AddYears(1),
+        IsActive = true,
+        Scopes = "read,write"
+    };
+    
+    await _context.ApiKeys.AddAsync(newApiKey);
+    await _context.SaveChangesAsync();
+    
+    // Return the plain key only once - it won't be retrievable later
+    return Ok(new { ApiKey = apiKey, Message = "Save this key securely. You won't be able to see it again." });
+}
+```
+
+```csharp
+// How clients use API keys
+// In C# HttpClient:
+var client = new HttpClient();
+client.DefaultRequestHeaders.Add("X-API-Key", "your-api-key-here");
+
+var response = await client.GetAsync("https://api.example.com/data");
+
+// The HTTP header looks like:
+// X-API-Key: AbCdEf123456...
+```
+
+**Pros and Cons**
+
+API Keys provide a simpler alternative to full OAuth for service-to-service communication. You can easily revoke keys without affecting other keys or user passwords. They can have specific scopes and permissions assigned. They're easy for developers to use and understand, and they perform well since validation can be cached.
+
+However, API keys are difficult to rotate automatically. If a key is compromised, it can be used until revoked. They don't provide fine-grained access control at the user level (they identify the application, not the user). Sharing keys securely is challenging. Like Basic Authentication, they must be transmitted over HTTPS. There's also the challenge of securely storing the keys on the client side.
+
+---
+
+### 3. Bearer Token Authentication
+
+**How It Works**
+
+Bearer token authentication is a broader category that includes JWT tokens, but it's worth discussing as its own concept. The term "Bearer" means "whoever bears (carries) this token." It's like a coat check ticket—anyone who has the ticket can retrieve the coat. The token is passed in the Authorization header with the prefix "Bearer".
+
+The key characteristic of bearer tokens is that possession of the token is sufficient for authentication. There's no proof of who you are beyond having the token itself. This is different from API keys which are typically tied to a specific client identity, and different from signatures where you prove you have the private key.
+
+**When to Use It**
+
+Bearer tokens are used everywhere in modern web applications. When you log into a website and it gives you a JWT token, that's bearer token authentication. When you use OAuth to access an API, you get bearer tokens. They're particularly common in SPAs and mobile applications where cookie-based authentication doesn't work as well.
+
+**Basic Example**
+
+```csharp
+// Bearer tokens are typically JWTs, but they don't have to be
+// Here's an example using opaque (non-JWT) bearer tokens
+
+// Token model
+public class AccessToken
+{
+    public string Token { get; set; }
+    public string UserId { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public List<string> Scopes { get; set; }
+}
+
+// Custom bearer token handler
+public class CustomBearerTokenHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+{
+    private readonly ITokenStore _tokenStore;
+
+    public CustomBearerTokenHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder,
+        ISystemClock clock,
+        ITokenStore tokenStore)
+        : base(options, logger, encoder, clock)
+    {
+        _tokenStore = tokenStore;
+    }
+
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        // Check for Authorization header
+        if (!Request.Headers.TryGetValue("Authorization", out var authHeaderValues))
+        {
+            return AuthenticateResult.Fail("Missing Authorization Header");
+        }
+
+        var authHeader = authHeaderValues.FirstOrDefault();
+        
+        // Must start with "Bearer "
+        if (!authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ?? true)
+        {
+            return AuthenticateResult.Fail("Invalid Authorization Header");
+        }
+
+        // Extract the token
+        var token = authHeader.Substring("Bearer ".Length).Trim();
+
+        if (string.IsNullOrEmpty(token))
+        {
+            return AuthenticateResult.Fail("Missing Token");
+        }
+
+        // Validate the token (lookup in database or cache)
+        var tokenInfo = await _tokenStore.ValidateTokenAsync(token);
+
+        if (tokenInfo == null)
+        {
+            return AuthenticateResult.Fail("Invalid Token");
+        }
+
+        if (tokenInfo.ExpiresAt < DateTime.UtcNow)
+        {
+            return AuthenticateResult.Fail("Token Expired");
+        }
+
+        // Create claims from token
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, tokenInfo.UserId),
+            new Claim("token_id", tokenInfo.Token)
+        };
+
+        foreach (var scope in tokenInfo.Scopes)
+        {
+            claims.Add(new Claim("scope", scope));
+        }
+
+        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var principal = new ClaimsPrincipal(identity);
+        var ticket = new AuthenticationTicket(principal, Scheme.Name);
+
+        return AuthenticateResult.Success(ticket);
+    }
+}
+```
+
+```csharp
+// Token generation and storage
+public interface ITokenStore
+{
+    Task<AccessToken> GenerateTokenAsync(string userId, List<string> scopes);
+    Task<AccessToken> ValidateTokenAsync(string token);
+    Task RevokeTokenAsync(string token);
+}
+
+public class TokenStore : ITokenStore
+{
+    private readonly ApplicationDbContext _context;
+    private readonly IDistributedCache _cache;
+
+    public async Task<AccessToken> GenerateTokenAsync(string userId, List<string> scopes)
+    {
+        // Generate a cryptographically secure random token
+        var tokenBytes = new byte[32];
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(tokenBytes);
+        }
+        
+        var token = Convert.ToBase64String(tokenBytes)
+            .Replace("+", "-")
+            .Replace("/", "_")
+            .TrimEnd('=');
+
+        var accessToken = new AccessToken
+        {
+            Token = token,
+            UserId = userId,
+            ExpiresAt = DateTime.UtcNow.AddHours(1),
+            Scopes = scopes
+        };
+
+        // Store in database
+        _context.AccessTokens.Add(accessToken);
+        await _context.SaveChangesAsync();
+
+        // Also cache for quick lookup
+        await _cache.SetStringAsync(
+            $"token:{token}",
+            JsonSerializer.Serialize(accessToken),
+            new DistributedCacheEntryOptions
+            {
+                AbsoluteExpiration = accessToken.ExpiresAt
+            });
+
+        return accessToken;
+    }
+
+    public async Task<AccessToken> ValidateTokenAsync(string token)
+    {
+        // Try cache first
+        var cached = await _cache.GetStringAsync($"token:{token}");
+        if (cached != null)
+        {
+            return JsonSerializer.Deserialize<AccessToken>(cached);
+        }
+
+        // Fall back to database
+        return await _context.AccessTokens
+            .FirstOrDefaultAsync(t => t.Token == token && t.ExpiresAt > DateTime.UtcNow);
+    }
+
+    public async Task RevokeTokenAsync(string token)
+    {
+        var tokenEntity = await _context.AccessTokens
+            .FirstOrDefaultAsync(t => t.Token == token);
+            
+        if (tokenEntity != null)
+        {
+            _context.AccessTokens.Remove(tokenEntity);
+            await _context.SaveChangesAsync();
+        }
+
+        await _cache.RemoveAsync($"token:{token}");
+    }
+}
+```
+
+```csharp
+// Login endpoint that returns a bearer token
+[HttpPost("login")]
+public async Task<IActionResult> Login([FromBody] LoginRequest request)
+{
+    var user = await _userService.ValidateCredentialsAsync(
+        request.Username, 
+        request.Password);
+        
+    if (user == null)
+    {
+        return Unauthorized();
+    }
+
+    // Generate access token
+    var token = await _tokenStore.GenerateTokenAsync(
+        user.Id.ToString(),
+        new List<string> { "read", "write" });
+
+    return Ok(new
+    {
+        access_token = token.Token,
+        token_type = "Bearer",
+        expires_in = (int)(token.ExpiresAt - DateTime.UtcNow).TotalSeconds
+    });
+}
+
+// Refresh token endpoint
+[HttpPost("refresh")]
+public async Task<IActionResult> RefreshToken([FromBody] RefreshRequest request)
+{
+    // Validate refresh token and issue new access token
+    // Implementation depends on your refresh token strategy
+}
+
+// Logout endpoint
+[HttpPost("logout")]
+[Authorize]
+public async Task<IActionResult> Logout()
+{
+    // Get the token from the Authorization header
+    var token = Request.Headers["Authorization"]
+        .ToString()
+        .Replace("Bearer ", "");
+        
+    await _tokenStore.RevokeTokenAsync(token);
+    
+    return Ok();
+}
+```
+
+**Bearer Token vs JWT**
+
+It's important to understand that Bearer tokens and JWTs are not the same thing, though they're often used together. Bearer token refers to how the token is transmitted (in the Authorization header with "Bearer" prefix). JWT is a specific format for what the token contains (a JSON-based, cryptographically signed token).
+
+You can have Bearer tokens that aren't JWTs (like the opaque tokens in our example above). You can also technically have JWTs that aren't bearer tokens (though this is rare). Most modern applications use JWT bearer tokens, which combines both concepts.
+
+**Pros and Cons**
+
+Bearer tokens (especially opaque ones) can be revoked immediately by removing them from the database or cache. They work great for stateful authentication where the server maintains session information. You have full control over token lifecycle and can add custom logic easily. They're simpler to understand than JWTs for some teams.
+
+However, opaque bearer tokens require a database or cache lookup on every request, which impacts performance at scale. They don't work well in distributed systems without a shared token store. The tokens themselves contain no information (unlike JWTs), so you always need to look up what they represent. Like all token-based auth, if someone steals your bearer token, they can use it until it expires or is revoked.
+
+---
+
+### 4. Cookie-Based Authentication
+
+**How It Works**
+
+Cookie authentication is like getting a wristband at an event. Once you show your ticket (log in), you get a wristband (cookie) that proves you've already been verified. Every time you move around the venue (make requests), security just checks your wristband instead of asking for your ticket again.
+
+When you successfully log in, ASP.NET Core creates an encrypted cookie and stores it in your browser. This cookie contains information about who you are (your claims). On each subsequent request, your browser automatically sends this cookie, and the server reads it to know who you are.
+
+**When to Use It**
+
+Cookie authentication works best for traditional web applications where users interact with your app through a browser. It's perfect for server-rendered pages (like Razor Pages or MVC), where the frontend and backend are tightly coupled and running on the same domain.
+
+**Basic Example**
+
+```csharp
+// In Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+// Add cookie authentication
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.LogoutPath = "/Account/Logout";
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(60);
+        options.SlidingExpiration = true; // Extends expiration on each request
+        options.Cookie.HttpOnly = true; // Prevents JavaScript access
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // HTTPS only
+        options.Cookie.SameSite = SameSiteMode.Strict; // CSRF protection
+    });
+
+var app = builder.Build();
+
+// Enable authentication middleware
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+app.Run();
+```
+
+```csharp
+// In your login controller
+[HttpPost]
+public async Task<IActionResult> Login(LoginModel model)
+{
+    // Validate user credentials (check database, etc.)
+    var user = await ValidateUserAsync(model.Username, model.Password);
+    
+    if (user == null)
+        return Unauthorized();
+
+    // Create claims - these are pieces of information about the user
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.Name, user.Username),
+        new Claim(ClaimTypes.Email, user.Email),
+        new Claim(ClaimTypes.Role, user.Role)
+    };
+
+    // Create the identity from claims
+    var claimsIdentity = new ClaimsIdentity(claims, 
+        CookieAuthenticationDefaults.AuthenticationScheme);
+
+    // Create the authentication properties
+    var authProperties = new AuthenticationProperties
+    {
+        IsPersistent = model.RememberMe, // "Remember Me" checkbox
+        ExpiresUtc = DateTimeOffset.UtcNow.AddHours(1)
+    };
+
+    // Sign in the user - this creates and sets the cookie
+    await HttpContext.SignInAsync(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        new ClaimsPrincipal(claimsIdentity),
+        authProperties);
+
+    return RedirectToAction("Index", "Home");
+}
+```
+
+**Pros and Cons**
+
+Cookie authentication offers automatic cookie management by the browser, built-in CSRF protection when configured properly, and straightforward session management. It works seamlessly with server-side rendered applications.
+
+However, cookies have limitations. They don't work well for mobile apps or SPAs that call APIs from different domains. They're also harder to use in distributed systems where you might have multiple backend services, since cookies are domain-specific and the browser handles them automatically.
+
+---
+
+### 5. JWT Bearer Token Authentication
+
+**How It Works**
+
+JWT (JSON Web Token) authentication is like having a digital passport. Instead of showing your ID every time, you get a signed document (the JWT) that contains your identity information and is cryptographically signed. Anyone can read it, but they can't forge it without the secret key.
+
+A JWT is a self-contained token with three parts: a header (describing the token), a payload (your claims), and a signature (proving it's legitimate). When you log in, the server creates this token and sends it to you. You then include it in the Authorization header of every request.
+
+**When to Use It**
+
+JWT authentication shines in scenarios where you need stateless authentication. It's ideal for APIs consumed by SPAs, mobile apps, or other services. If you're building a microservices architecture or need to share authentication across different domains, JWT is your friend.
+
+**Basic Example**
+
+```csharp
+// In Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+// Get the secret key from configuration
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"];
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            // Validate the token was issued by our server
+            ValidateIssuer = true,
+            ValidIssuer = jwtSettings["Issuer"],
+            
+            // Validate the token is intended for our audience
+            ValidateAudience = true,
+            ValidAudience = jwtSettings["Audience"],
+            
+            // Validate the signing key
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(secretKey)),
+            
+            // Validate token expiration
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero // No grace period for expiration
+        };
+    });
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+```
+
+```csharp
+// In appsettings.json
+{
+  "JwtSettings": {
+    "SecretKey": "YourSuperSecretKeyThatShouldBeLongEnough123!",
+    "Issuer": "YourAppName",
+    "Audience": "YourAppName",
+    "ExpirationMinutes": 60
+  }
+}
+```
+
+```csharp
+// Token generation in your login controller
+[HttpPost("login")]
+public IActionResult Login([FromBody] LoginModel model)
+{
+    // Validate credentials
+    var user = ValidateUser(model.Username, model.Password);
+    if (user == null)
+        return Unauthorized();
+
+    // Create claims
+    var claims = new[]
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.Name, user.Username),
+        new Claim(ClaimTypes.Email, user.Email),
+        new Claim(ClaimTypes.Role, user.Role)
+    };
+
+    // Create the signing key
+    var key = new SymmetricSecurityKey(
+        Encoding.UTF8.GetBytes(_configuration["JwtSettings:SecretKey"]));
+    var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+    // Create the token
+    var token = new JwtSecurityToken(
+        issuer: _configuration["JwtSettings:Issuer"],
+        audience: _configuration["JwtSettings:Audience"],
+        claims: claims,
+        expires: DateTime.UtcNow.AddMinutes(60),
+        signingCredentials: credentials
+    );
+
+    // Return the token as a string
+    var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+    
+    return Ok(new { Token = tokenString });
+}
+```
+
+```csharp
+// How clients use the token
+// In JavaScript (example)
+// fetch('api/protected', {
+//     headers: {
+//         'Authorization': 'Bearer ' + token
+//     }
+// });
+```
+
+**Pros and Cons**
+
+JWT tokens are stateless, meaning the server doesn't need to store session data. This makes them perfect for scaling horizontally across multiple servers. They work seamlessly across different domains and are ideal for mobile and SPA applications. The tokens themselves contain the user information, so you don't need database lookups on every request.
+
+On the downside, you can't easily revoke a JWT before it expires (unless you maintain a blacklist, which defeats the stateless purpose). The tokens can get large if you include many claims, and you need to be careful about where you store them on the client side. If someone steals your token, they can use it until it expires.
+
+---
+
+### 6. OAuth 2.0 / OpenID Connect
+
+**How It Works**
+
+OAuth is like valet parking for your identity. Instead of giving your car keys (password) to multiple people, you give a valet ticket (access token) that only allows specific actions. OpenID Connect (OIDC) builds on OAuth to add identity information.
+
+OAuth 2.0 handles authorization (what you can do), while OIDC adds authentication (who you are). Together, they enable scenarios like "Sign in with Google" or "Login with Microsoft." Your app doesn't handle passwords at all—it delegates that responsibility to a trusted identity provider.
+
+**When to Use It**
+
+Use OAuth/OIDC when you want users to sign in with external providers (Google, Microsoft, Facebook), when building enterprise SSO solutions, or when you need to access third-party APIs on behalf of users. It's also essential for multi-tenant applications where each organization might use different identity providers.
+
+**Basic Example with Microsoft Identity**
+
+```csharp
+// In Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+})
+.AddCookie()
+.AddOpenIdConnect(options =>
+{
+    options.Authority = "https://login.microsoftonline.com/{tenant-id}/v2.0";
+    options.ClientId = builder.Configuration["AzureAd:ClientId"];
+    options.ClientSecret = builder.Configuration["AzureAd:ClientSecret"];
+    options.ResponseType = OpenIdConnectResponseType.Code;
+    options.SaveTokens = true; // Save tokens for later use
+    
+    // Request specific scopes
+    options.Scope.Add("openid");
+    options.Scope.Add("profile");
+    options.Scope.Add("email");
+    
+    // Handle tokens
+    options.Events = new OpenIdConnectEvents
+    {
+        OnTokenValidated = context =>
+        {
+            // Access user information from the token
+            var email = context.Principal.FindFirst(ClaimTypes.Email)?.Value;
+            // Store in database, add custom claims, etc.
+            return Task.CompletedTask;
+        }
+    };
+});
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+```
+
+```csharp
+// In appsettings.json
+{
+  "AzureAd": {
+    "Instance": "https://login.microsoftonline.com/",
+    "TenantId": "your-tenant-id",
+    "ClientId": "your-client-id",
+    "ClientSecret": "your-client-secret",
+    "CallbackPath": "/signin-oidc"
+  }
+}
+```
+
+**OAuth 2.0 Flow Diagram**
+
+```
+User                    Your App               Identity Provider (Google, etc.)
+ |                         |                              |
+ |--1. Click "Login"------>|                              |
+ |                         |                              |
+ |                         |--2. Redirect to Provider---->|
+ |                         |                              |
+ |<-----------------------3. Login Page------------------|
+ |                         |                              |
+ |--4. Enter Credentials-------------------------------->|
+ |                         |                              |
+ |<-----------------------5. Authorization Code----------|
+ |                         |                              |
+ |--6. Forward Code------->|                              |
+ |                         |                              |
+ |                         |--7. Exchange Code + Secret-->|
+ |                         |                              |
+ |                         |<--8. Access Token + ID Token-|
+ |                         |                              |
+ |<-9. Set Cookie/Token----|                              |
+ |                         |                              |
+```
+
+**Pros and Cons**
+
+OAuth/OIDC provides enterprise-grade security handled by specialized providers. Users don't need another password to remember, and you don't have to manage password resets or security. It supports sophisticated scenarios like multi-factor authentication and conditional access.
+
+However, it adds complexity to your application and creates a dependency on external services. You need to handle token refresh, deal with provider-specific quirks, and manage the registration process with each provider. Network issues or provider outages can affect your login process.
+
+---
+
+### 7. SAML 2.0 Authentication
+
+**How It Works**
+
+SAML (Security Assertion Markup Language) is like a notarized letter of introduction. When you log in to an Identity Provider (like your company's Active Directory), they create a digitally signed XML document (SAML assertion) that vouches for your identity. Your app trusts this assertion and lets you in.
+
+SAML has been the enterprise standard for single sign-on for years. It's XML-based and more complex than modern alternatives, but it's deeply integrated into enterprise identity systems like Active Directory Federation Services (ADFS).
+
+**When to Use It**
+
+Use SAML when integrating with enterprise systems that require it, especially legacy systems or organizations that have standardized on SAML. It's common in large corporations, educational institutions, and government agencies.
+
+**Basic Example**
+
+```csharp
+// Using Sustainsys.Saml2 library
+// Install: dotnet add package Sustainsys.Saml2.AspNetCore2
+
+// In Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = Saml2Defaults.Scheme;
+})
+.AddCookie()
+.AddSaml2(options =>
+{
+    // Service Provider (your app) entity ID
+    options.SPOptions.EntityId = new EntityId("https://yourapp.com");
+    
+    // Where to send users after authentication
+    options.SPOptions.ReturnUrl = new Uri("https://yourapp.com/");
+    
+    // Add the Identity Provider
+    options.IdentityProviders.Add(new IdentityProvider(
+        new EntityId("https://idp.example.com"),
+        options.SPOptions)
+    {
+        SingleSignOnServiceUrl = new Uri("https://idp.example.com/sso"),
+        
+        // Load the IDP's signing certificate
+        LoadMetadata = true,
+        MetadataLocation = "https://idp.example.com/metadata"
+    });
+});
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+```
+
+**SAML Flow Diagram**
+
+```
+User                Your App (SP)          Identity Provider (IdP)
+ |                      |                           |
+ |--1. Access App------>|                           |
+ |                      |                           |
+ |                      |--2. Redirect + SAML Req-->|
+ |                      |                           |
+ |<--------------------3. Login Form----------------|
+ |                      |                           |
+ |--4. Credentials------------------------------------->|
+ |                      |                           |
+ |<--------------------5. SAML Response (XML)--------|
+ |                      |                           |
+ |--6. Forward Response>|                           |
+ |                      |                           |
+ |                      |--7. Validate Signature    |
+ |                      |    & Extract Claims       |
+ |                      |                           |
+ |<-8. Create Session---|                           |
+ |                      |                           |
+```
+
+**Pros and Cons**
+
+SAML is mature, battle-tested, and widely supported in enterprise environments. It provides strong security with XML signatures and encryption, and it integrates seamlessly with enterprise directories.
+
+However, SAML is complex and XML-heavy, which makes it harder to debug and implement. It's not well-suited for mobile apps or modern SPAs. The specification is dated, and newer alternatives like OIDC are simpler and more developer-friendly.
+
+---
+
+## Comparing the Methods
+
+### Cookie vs JWT: When to Choose What
+
+**Cookie Authentication** is like having a membership card to a single club. It works great when your frontend and backend are married together, living on the same domain. The browser handles everything automatically, making it simple and secure for traditional web applications. However, this automatic behavior becomes a limitation when you need to call your API from a mobile app or from JavaScript running on a different domain.
+
+**JWT Authentication** is like having a universal pass. You can present it anywhere—mobile apps, different domains, microservices. It's stateless, so your servers don't need to remember anything about active sessions. But with great flexibility comes great responsibility. You need to carefully manage where tokens are stored on the client, handle expiration gracefully, and accept that you can't easily revoke a token once it's issued.
+
+### OAuth/OIDC vs SAML: The Enterprise Perspective
+
+**OAuth 2.0 with OpenID Connect** is the modern choice. It uses JSON, works beautifully with REST APIs, and is designed for the internet age. It's what consumer-facing applications use for "Sign in with Google" functionality. The tokens are compact, and the specification is actively maintained and evolving.
+
+**SAML** is the traditional enterprise standard. It's what large organizations have been using for decades, integrated deeply into their Active Directory and other identity systems. While it's more complex and uses verbose XML, it offers features that some enterprises still require. Think of it as the established language of enterprise SSO.
+
+For new projects, OIDC is generally the better choice unless you have specific requirements for SAML compatibility. Many organizations are actually migrating from SAML to OIDC over time.
+
+---
+
+## Performance and Security Considerations
+
+### Performance Comparison
+
+**Cookie authentication** has minimal overhead. The encrypted cookie is typically a few kilobytes, and validation is fast since it's just decryption. However, cookies are sent with every request to the domain, even for static assets, which can add up.
+
+**JWT authentication** requires signature verification on each request, which involves cryptographic operations. The tokens are larger than session cookies, especially with many claims. However, because they're stateless, you save database lookups for session validation. For read-heavy applications with many servers, this can be a net win.
+
+**OAuth/OIDC** adds network overhead since you're communicating with an external identity provider during login. However, this is a one-time cost per session. Subsequent requests use cached tokens locally, so the performance is similar to JWT.
+
+**SAML** has significant overhead due to XML parsing and signature validation. The SAML assertions can be quite large. However, like OAuth, this is primarily a login-time cost.
+
+### Security Benchmarks
+
+From a security standpoint, all methods can be secure when implemented correctly, but they have different risk profiles.
+
+**Cookie-based authentication** is vulnerable to CSRF attacks if not configured with SameSite cookies and XSRF tokens. However, using HttpOnly cookies protects against XSS attacks since JavaScript can't access them.
+
+**JWT authentication** is vulnerable to XSS if tokens are stored in localStorage. If an attacker injects JavaScript, they can steal tokens. The solution is to store JWTs in HttpOnly cookies, but then you're back to needing CSRF protection. JWT tokens can't be easily revoked, so a leaked token is valid until expiration.
+
+**OAuth/OIDC** delegates security to specialized providers who employ teams of security experts, use MFA, and monitor for suspicious activity. This is generally more secure than rolling your own authentication, but you're trusting a third party.
+
+**SAML** provides strong security through XML signatures and optional encryption. However, the complexity of the XML processing has led to various security vulnerabilities over the years in different implementations.
+
+---
+
+## Practical Recommendations
+
+### For a Traditional MVC or Razor Pages Web App
+
+Use cookie-based authentication with ASP.NET Core Identity. It's simple, well-integrated, and handles everything you need including user registration, password reset, and two-factor authentication.
+
+```csharp
+builder.Services.AddDefaultIdentity<IdentityUser>(options => 
+{
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 8;
+    options.SignIn.RequireConfirmedEmail = true;
+    options.Lockout.MaxFailedAccessAttempts = 5;
+})
+.AddEntityFrameworkStores<ApplicationDbContext>();
+```
+
+### For a SPA with a Dedicated API Backend
+
+Use JWT bearer tokens or cookie-based authentication with anti-forgery tokens. If your SPA and API are on the same domain, cookies actually work well and are more secure. If they're on different domains, JWTs in the Authorization header are the way to go.
+
+### For a Mobile App or Third-Party API Consumers
+
+Use JWT bearer tokens exclusively. Mobile apps can't use cookies effectively, and third parties need a standard way to authenticate. Implement token refresh to balance security and user experience.
+
+### For Enterprise SSO Integration
+
+Use whatever your identity provider supports. If they offer OIDC, use that. If they only support SAML, use SAML. Don't try to force a square peg into a round hole. Libraries like `Microsoft.AspNetCore.Authentication.OpenIdConnect` and `Sustainsys.Saml2` make integration straightforward.
+
+---
+
+## Combining Multiple Methods
+
+Sometimes you need multiple authentication methods in the same application. For example, you might have a web interface using cookies and an API using JWT for mobile apps.
+
+```csharp
+builder.Services.AddAuthentication(options =>
+{
+    // Default to cookies for web
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+})
+.AddCookie()
+.AddJwtBearer(options =>
+{
+    // Configure JWT as before
+    options.TokenValidationParameters = new TokenValidationParameters { /*...*/ };
+});
+
+// Create a policy that accepts either method
+builder.Services.AddAuthorization(options =>
+{
+    var defaultAuthorizationPolicyBuilder = new AuthorizationPolicyBuilder(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        JwtBearerDefaults.AuthenticationScheme);
+    defaultAuthorizationPolicyBuilder = 
+        defaultAuthorizationPolicyBuilder.RequireAuthenticatedUser();
+    options.DefaultPolicy = defaultAuthorizationPolicyBuilder.Build();
+});
+```
+
+With this configuration, your controllers can accept either cookies or JWT tokens, and ASP.NET Core will automatically try both authentication methods.
+
+---
+
+## Conclusion
+
+Authentication in ASP.NET Core is flexible and powerful, but that flexibility means you need to make informed choices. Cookie authentication is simple and secure for traditional web apps. JWT tokens offer stateless, portable authentication for APIs and mobile apps. OAuth/OIDC delegates authentication to specialized providers and enables social login. SAML integrates with enterprise identity systems.
+
+The key is understanding your specific requirements. Are you building a traditional web app or a modern SPA? Do users authenticate locally or through a corporate directory? Are mobile apps involved? Answer these questions, and the right authentication method becomes clear.
+
+Remember that security is a journey, not a destination. Whichever method you choose, keep your libraries updated, follow security best practices, use HTTPS everywhere, and consider adding multi-factor authentication for sensitive applications. Your users' trust depends on it.

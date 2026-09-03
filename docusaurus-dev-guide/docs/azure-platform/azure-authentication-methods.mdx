@@ -4,15 +4,907 @@ sidebar_label: "Azure Authentication Methods"
 sidebar_position: 5
 tags: [azure, authentication, dotnet, managed-identity, entra]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Verify if it is accurate"/>
 
 # Azure Authentication Methods: Comprehensive Guide for .NET Applications
 
 A detailed exploration of authentication methods available for .NET applications in Azure — Managed Identity, Service Principal, DefaultAzureCredential, and more.
 
-<iframe
-  src="https://claude.ai/public/artifacts/178bb198-a4f6-4fa3-b670-fb0b0d796910/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="Azure Authentication Methods for .NET Applications"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# Azure Authentication Methods - Comprehensive Guide for .NET Applications
+
+Understanding how to authenticate with Azure services is one of the most fundamental skills you need when building cloud applications. This guide will take you on a journey through the various authentication methods available in Azure, explaining not just how each one works, but when you should use them and why they exist. Think of authentication as the foundation of your application's security architecture. Getting this right from the start makes everything else easier and more secure.
+
+## Understanding the Azure Identity Landscape
+
+Before we dive into specific authentication methods, let me help you understand the bigger picture of how authentication works in Azure. When your application needs to access an Azure resource like a storage account, a database, or a Key Vault, Azure needs to answer two critical questions. First, who or what is making this request? This is authentication, which is about proving identity. Second, is this identity allowed to perform the requested action? This is authorization, which is about permissions and access control.
+
+Azure provides a unified identity platform called Azure Active Directory, now being rebranded as Microsoft Entra ID, that handles authentication for all Azure services. Every identity in your Azure environment, whether it is a human user, an application, or an Azure service itself, exists as a security principal in Azure AD. These security principals can be granted permissions to access resources, and Azure checks these permissions every time a request is made.
+
+The authentication methods we will explore represent different ways to prove that your application is a legitimate security principal in Azure AD. Some methods are designed for development scenarios where you want to use your personal credentials, while others are designed for production scenarios where applications need to authenticate without human intervention. Understanding when to use each method is just as important as understanding how they work.
+
+## The DefaultAzureCredential: Your Swiss Army Knife
+
+The DefaultAzureCredential is perhaps the most important concept to understand when working with Azure authentication from .NET applications. It represents a fundamental shift in how Microsoft wants developers to think about authentication. Instead of writing different authentication code for development versus production, or having complex conditional logic to handle different environments, DefaultAzureCredential provides a single, unified approach that automatically adapts to whatever environment your code runs in.
+
+Think of DefaultAzureCredential as a smart detective that tries multiple strategies to find valid credentials. It implements what is called a credential chain, which means it attempts several different authentication methods in a specific order until one succeeds. This design allows the same code to work seamlessly across your development machine, your CI/CD pipeline, and your production environment in Azure, all without any configuration changes or conditional statements.
+
+When you create a DefaultAzureCredential instance, it attempts these authentication methods in this precise order. First, it looks for environment variables containing Azure credentials, specifically AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET. These environment variables are commonly used in containerized environments and CI/CD pipelines where you might set credentials as pipeline secrets or Docker environment variables. If these variables exist and contain valid credentials, authentication succeeds immediately and the chain stops.
+
+Second, DefaultAzureCredential attempts to use Managed Identity if one is available. When your application runs in Azure services like App Service, Azure Functions, Container Apps, or Virtual Machines that have been configured with a managed identity, Azure automatically provides credentials to your application through a special endpoint that is only accessible from within that Azure service. This is the gold standard for production authentication because there are no secrets to manage, rotate, or protect. The credentials are provided automatically by the Azure platform and only work from within that specific Azure service.
+
+Third, it tries to use credentials from Visual Studio if you are signed into Visual Studio with your Azure account. When you authenticate in Visual Studio, it caches your credentials in a secure location on your machine, and DefaultAzureCredential can access these cached credentials. This makes local development seamless because you authenticate once in your IDE and all your Azure SDK calls just work without requiring any additional configuration or authentication code.
+
+Fourth, it attempts to use credentials from Visual Studio Code through the Azure Account extension. Similar to Visual Studio, if you have signed into Azure through VS Code's Azure Account extension, those credentials become available to DefaultAzureCredential. This provides the same seamless development experience for developers who prefer VS Code over Visual Studio.
+
+Fifth, it tries to use Azure CLI credentials. If you have run the command az login in your terminal, the Azure CLI stores your credentials locally in a well-known location. DefaultAzureCredential can read these credentials and use them to authenticate with Azure services. This is one of the most popular methods for local development because the Azure CLI works across all operating systems and all development tools, making it a universal solution that does not depend on which IDE you use.
+
+Sixth, it attempts to use Azure PowerShell credentials. If you have authenticated using Connect-AzAccount in PowerShell, those credentials are available to DefaultAzureCredential. This is particularly useful for developers who work extensively with PowerShell for Azure automation and scripting.
+
+Finally, if all other methods fail, DefaultAzureCredential can optionally attempt interactive browser authentication where it opens a browser window asking you to sign in. This is typically disabled by default because it is not suitable for automated scenarios or production environments, but you can enable it during development if needed.
+
+Here is how you create and use DefaultAzureCredential in your application. The code is remarkably simple, which is exactly the point. You do not need to know which authentication method will succeed or write conditional logic to handle different environments. DefaultAzureCredential figures it out automatically:
+
+```csharp
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+
+// Create DefaultAzureCredential with default settings
+// This will try all authentication methods in the standard order
+var credential = new DefaultAzureCredential();
+
+// Use this credential with any Azure SDK client
+var client = new SecretClient(
+    new Uri("https://your-keyvault.vault.azure.net/"), 
+    credential);
+
+// The same credential works whether you're running locally with Azure CLI credentials
+// or in production with a Managed Identity - no code changes needed
+var secret = await client.GetSecretAsync("your-secret-name");
+```
+
+You can also configure DefaultAzureCredential to customize its behavior. This is useful when you want to exclude certain authentication methods, specify a particular tenant, or enable diagnostic logging to understand which authentication method is being used:
+
+```csharp
+using Azure.Identity;
+using Azure.Core.Diagnostics;
+
+// Enable detailed logging to see which credential methods are being tried
+using var listener = AzureEventSourceListener.CreateConsoleLogger(EventLevel.Verbose);
+
+// Create DefaultAzureCredential with custom options
+var options = new DefaultAzureCredentialOptions
+{
+    // Exclude authentication methods you don't want to use
+    // This can make the authentication process faster by skipping methods
+    // that you know won't work in your environment
+    ExcludeEnvironmentCredential = false,      // Keep environment variables
+    ExcludeManagedIdentityCredential = false,  // Keep managed identity
+    ExcludeSharedTokenCacheCredential = true,  // Skip shared token cache
+    ExcludeVisualStudioCredential = false,     // Keep Visual Studio
+    ExcludeVisualStudioCodeCredential = false, // Keep VS Code
+    ExcludeAzureCliCredential = false,         // Keep Azure CLI
+    ExcludeAzurePowerShellCredential = true,   // Skip PowerShell
+    ExcludeInteractiveBrowserCredential = true, // Skip browser authentication
+    
+    // Specify a tenant ID if you need to authenticate to a specific tenant
+    // This is useful when you have access to multiple Azure AD tenants
+    TenantId = "your-tenant-id-guid",
+    
+    // Configure retry settings for more resilient authentication
+    Retry = {
+        MaxRetries = 3,
+        Delay = TimeSpan.FromSeconds(2)
+    }
+};
+
+var credential = new DefaultAzureCredential(options);
+```
+
+The power of DefaultAzureCredential becomes evident when you think about your application's lifecycle. During development, you authenticate once using Azure CLI with az login, and DefaultAzureCredential uses those credentials automatically. When you commit your code to source control, there are no credentials in the code because you are using DefaultAzureCredential, not hardcoded secrets. When your CI/CD pipeline builds and tests your application, you set the AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_CLIENT_SECRET as pipeline secrets, and DefaultAzureCredential uses those environment variables. When you deploy to Azure and enable Managed Identity on your App Service, DefaultAzureCredential automatically discovers and uses that managed identity. The same line of code works in all these scenarios without any modification.
+
+## Explicit Credential Types: When You Need More Control
+
+While DefaultAzureCredential works beautifully for most scenarios, there are times when you need more explicit control over exactly which authentication method your application uses. Perhaps you want to ensure that your application only authenticates with managed identity in production and fails fast if managed identity is not configured, rather than falling back to other methods. Or maybe you need to use different credentials for different Azure resources in the same application. This is where the explicit credential types become valuable.
+
+The Azure.Identity library provides specific credential classes for each authentication method that DefaultAzureCredential tries internally. By using these explicit credential types, you gain complete control over the authentication process at the cost of some additional complexity in your code. Let me walk you through the most important explicit credential types and when you would choose to use each one.
+
+### ManagedIdentityCredential: Production Authentication Done Right
+
+ManagedIdentityCredential represents the ideal authentication method for production applications running in Azure. When you use a managed identity, Azure automatically provides your application with an identity in Azure AD without requiring you to manage any secrets, certificates, or passwords. This identity exists only within the Azure platform and cannot be used from outside your Azure service, which makes it inherently more secure than any credential you could configure yourself.
+
+There are two types of managed identities in Azure. A system-assigned managed identity is created for a specific Azure resource and exists only as long as that resource exists. When you delete the Azure resource, the managed identity is automatically deleted as well. This tight coupling makes system-assigned identities perfect for applications where each deployment has its own isolated identity. A user-assigned managed identity, on the other hand, is created as an independent Azure resource that can be assigned to multiple Azure services. This is useful when you have multiple applications or service instances that should share the same identity and permissions.
+
+Here is how you would explicitly use ManagedIdentityCredential in your application. Notice how the code is almost identical to using DefaultAzureCredential, but now you are being explicit about your intent to use managed identity and only managed identity:
+
+```csharp
+using Azure.Identity;
+using Azure.Storage.Blobs;
+
+// For system-assigned managed identity, simply create the credential
+// The Azure platform automatically provides the identity details
+var credential = new ManagedIdentityCredential();
+
+// Use the credential with any Azure SDK client
+var blobServiceClient = new BlobServiceClient(
+    new Uri("https://yourstorageaccount.blob.core.windows.net"),
+    credential);
+
+// If you're using a user-assigned managed identity, you need to specify its client ID
+// This tells Azure which of potentially multiple assigned identities to use
+var userAssignedCredential = new ManagedIdentityCredential(
+    clientId: "your-user-assigned-identity-client-id");
+```
+
+The advantage of using ManagedIdentityCredential explicitly instead of relying on DefaultAzureCredential is that your application will fail immediately and clearly if managed identity is not configured, rather than potentially falling back to developer credentials or other authentication methods that should not be used in production. This fail-fast behavior helps you catch configuration issues during deployment rather than discovering them later when the application has been running for a while.
+
+### ClientSecretCredential: Service Principal Authentication
+
+ClientSecretCredential uses a service principal, which is essentially an application identity in Azure AD that has its own client ID and secret. Think of a service principal as creating a special user account just for your application, except instead of a username and password, it has a client ID and client secret. Service principals are extremely common in enterprise environments, CI/CD pipelines, and scenarios where you need to authenticate from outside Azure.
+
+When you create an App Registration in Azure AD, you are creating a service principal. You can then generate a client secret for that service principal, which is like creating a password for the application identity. This client ID and secret combination can be used to authenticate from anywhere, not just from within Azure, which makes service principals very flexible but also means you need to protect the client secret carefully since anyone who obtains it can impersonate your application.
+
+Here is how you use ClientSecretCredential in your application. You typically load the client ID, client secret, and tenant ID from configuration rather than hardcoding them, which allows you to use different credentials in different environments:
+
+```csharp
+using Azure.Identity;
+using Microsoft.Extensions.Configuration;
+using Azure.Data.Tables;
+
+// Load service principal credentials from configuration
+// In development, these might come from User Secrets
+// In production, they might come from environment variables or Azure App Configuration
+var clientId = configuration["AzureAd:ClientId"];
+var clientSecret = configuration["AzureAd:ClientSecret"];
+var tenantId = configuration["AzureAd:TenantId"];
+
+// Create a credential using the service principal
+var credential = new ClientSecretCredential(
+    tenantId: tenantId,
+    clientId: clientId,
+    clientSecret: clientSecret);
+
+// Use the credential with any Azure SDK client
+var tableServiceClient = new TableServiceClient(
+    new Uri("https://yourstorageaccount.table.core.windows.net"),
+    credential);
+
+// You can configure additional options like retry behavior and diagnostics
+var credentialWithOptions = new ClientSecretCredential(
+    tenantId: tenantId,
+    clientId: clientId,
+    clientSecret: clientSecret,
+    options: new ClientSecretCredentialOptions
+    {
+        // Configure retry behavior for more resilient authentication
+        Retry = {
+            MaxRetries = 3,
+            Delay = TimeSpan.FromSeconds(1),
+            Mode = Azure.Core.RetryMode.Exponential
+        },
+        
+        // Enable diagnostic logging
+        Diagnostics = {
+            IsLoggingEnabled = true,
+            IsLoggingContentEnabled = false // Don't log secrets
+        }
+    });
+```
+
+The primary use case for ClientSecretCredential is when you need to authenticate from environments where managed identity is not available. This includes on-premises applications, applications running in other cloud providers, local development when you want explicit control over which credentials are used, CI/CD pipelines where you configure the credentials as pipeline secrets, or multi-tenant applications where different customers might use different Azure AD tenants.
+
+### AzureCliCredential: Developer-Friendly Local Authentication
+
+AzureCliCredential uses credentials cached by the Azure CLI after you run az login. This is one of the most popular authentication methods for local development because it works across all operating systems, all development tools, and all programming languages that use Azure SDKs. The Azure CLI provides a universal authentication mechanism that does not depend on which IDE or editor you prefer.
+
+When you run az login, the Azure CLI opens a browser window where you authenticate with your Azure account. After successful authentication, the CLI stores your credentials securely on your local machine. These credentials are then available to any Azure SDK that knows how to read them, including the .NET Azure SDKs through AzureCliCredential.
+
+Here is how you explicitly use AzureCliCredential in your application:
+
+```csharp
+using Azure.Identity;
+using Azure.Messaging.ServiceBus;
+
+// Create a credential that uses Azure CLI cached credentials
+// This will fail if you haven't run 'az login' recently or if the token has expired
+var credential = new AzureCliCredential();
+
+// Use the credential with any Azure SDK client
+var serviceBusClient = new ServiceBusClient(
+    "your-servicebus-namespace.servicebus.windows.net",
+    credential);
+
+// You can configure options like which tenant to use if you have access to multiple
+var credentialWithOptions = new AzureCliCredential(
+    new AzureCliCredentialOptions
+    {
+        TenantId = "your-tenant-id",
+        
+        // Configure how long to wait for the Azure CLI to respond
+        ProcessTimeout = TimeSpan.FromSeconds(30)
+    });
+```
+
+The advantage of using AzureCliCredential explicitly during development is that it makes your authentication intention clear and fails quickly if Azure CLI credentials are not available. This is particularly useful in development teams where you want to ensure all developers follow the same authentication pattern. You can document in your README that developers should run az login before working with the application, and by using AzureCliCredential explicitly, the application will provide a clear error message if they forget.
+
+### EnvironmentCredential: Container and Pipeline Authentication
+
+EnvironmentCredential reads service principal credentials from environment variables, which makes it perfect for containerized applications, Kubernetes deployments, and CI/CD pipelines. This credential type looks for three specific environment variables: AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_CLIENT_SECRET. If these variables are set, EnvironmentCredential uses them to create a service principal authentication flow.
+
+The beauty of environment variables is that they are a universal mechanism supported by every operating system, container runtime, and orchestration platform. Whether you are running in Docker, Kubernetes, Azure DevOps pipelines, GitHub Actions, or any other environment, you can set environment variables to provide credentials to your application.
+
+Here is how you use EnvironmentCredential explicitly:
+
+```csharp
+using Azure.Identity;
+using Azure.Messaging.EventHubs;
+
+// Create a credential that reads from environment variables
+// This will only succeed if AZURE_CLIENT_ID, AZURE_TENANT_ID, and
+// AZURE_CLIENT_SECRET environment variables are all set
+var credential = new EnvironmentCredential();
+
+// Use the credential with any Azure SDK client
+var eventHubProducerClient = new EventHubProducerClient(
+    "your-eventhub-namespace.servicebus.windows.net",
+    "your-eventhub-name",
+    credential);
+
+// The environment variables can be set in various ways depending on your environment:
+// - In Kubernetes: through secrets mounted as environment variables
+// - In Docker: through the -e flag or docker-compose environment section
+// - In Azure DevOps: through pipeline variables marked as secret
+// - In GitHub Actions: through encrypted secrets
+// - Locally for testing: through your IDE's run configuration or launchSettings.json
+```
+
+One important security consideration with EnvironmentCredential is ensuring that the environment variables containing your credentials are properly protected. In container orchestration platforms like Kubernetes, you should use Secrets to store these values and mount them as environment variables rather than hardcoding them in your container definitions. In CI/CD pipelines, you should use the pipeline's secret management features to inject these values as environment variables rather than storing them in your pipeline YAML files.
+
+### InteractiveBrowserCredential: Desktop and Interactive Applications
+
+InteractiveBrowserCredential is designed for desktop applications, command-line tools, and other scenarios where a human user is present to complete an interactive sign-in flow. When you use this credential type, it opens the user's default web browser and navigates to the Azure AD sign-in page where the user can enter their credentials. After successful authentication, Azure AD redirects back to your application with an authorization code that is exchanged for an access token.
+
+This credential type is particularly useful for developer tools, administrative utilities, and desktop applications that need to access Azure resources on behalf of a signed-in user. However, it is not suitable for server applications, background services, or any scenario where user interaction is not possible.
+
+Here is how you use InteractiveBrowserCredential:
+
+```csharp
+using Azure.Identity;
+using Azure.ResourceManager;
+
+// Create an interactive credential that will prompt for sign-in
+var credential = new InteractiveBrowserCredential(
+    new InteractiveBrowserCredentialOptions
+    {
+        // Specify your Azure AD tenant if you want to restrict which accounts can sign in
+        TenantId = "your-tenant-id",
+        
+        // Specify a client ID if you have registered your application in Azure AD
+        // This is required for production applications but optional for development
+        ClientId = "your-client-id",
+        
+        // Configure the redirect URI where Azure AD should send the authorization code
+        // The default is http://localhost which works for most desktop scenarios
+        RedirectUri = new Uri("http://localhost")
+    });
+
+// Use the credential with any Azure SDK client
+// The first time you use this credential, it will open a browser for sign-in
+var armClient = new ArmClient(credential);
+
+// After the initial sign-in, the credential caches the tokens
+// Subsequent uses within the token lifetime won't require sign-in again
+var subscriptions = armClient.GetSubscriptions();
+```
+
+The interactive browser flow follows the OAuth 2.0 authorization code flow, which is the most secure way to authenticate users in applications that can launch a browser. The user's credentials are entered directly into the Azure AD sign-in page, so your application never sees or handles the user's password. Azure AD returns only an authorization code to your application, which is then exchanged for access tokens. This separation means that even if your application is compromised, the attacker does not gain access to the user's credentials.
+
+## Connecting to Common Azure Resources
+
+Now that you understand the various authentication methods available, let me show you how to connect to some of the most common Azure resources using these credentials. Each Azure service has its own SDK client, but the authentication pattern remains consistent across all of them. You create a credential using one of the methods we have discussed, then pass that credential to the service-specific client. This consistent pattern makes it easy to work with multiple Azure services in the same application.
+
+### Azure Blob Storage: Storing and Retrieving Files
+
+Azure Blob Storage is one of the most commonly used Azure services, providing scalable object storage for unstructured data like documents, images, videos, and backups. The Azure.Storage.Blobs package provides the BlobServiceClient for managing storage accounts, BlobContainerClient for working with containers, and BlobClient for individual blob operations.
+
+Here is a comprehensive example showing how to authenticate and work with Blob Storage using different credential types:
+
+```csharp
+using Azure.Identity;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+
+// APPROACH 1: Using DefaultAzureCredential (recommended for most scenarios)
+// This works in development with Azure CLI and in production with Managed Identity
+var credential = new DefaultAzureCredential();
+var storageAccountUrl = "https://yourstorageaccount.blob.core.windows.net";
+var blobServiceClient = new BlobServiceClient(
+    new Uri(storageAccountUrl), 
+    credential);
+
+// APPROACH 2: Using ManagedIdentityCredential explicitly (production-only)
+var managedIdentityCredential = new ManagedIdentityCredential();
+var blobServiceClientWithMI = new BlobServiceClient(
+    new Uri(storageAccountUrl),
+    managedIdentityCredential);
+
+// APPROACH 3: Using ClientSecretCredential (when running outside Azure)
+var clientSecretCredential = new ClientSecretCredential(
+    tenantId: "your-tenant-id",
+    clientId: "your-client-id",
+    clientSecret: "your-client-secret");
+var blobServiceClientWithSP = new BlobServiceClient(
+    new Uri(storageAccountUrl),
+    clientSecretCredential);
+
+// Working with Blob Storage after authentication
+// Get a reference to a container (like a folder for blobs)
+var containerClient = blobServiceClient.GetBlobContainerClient("my-container");
+
+// Create the container if it doesn't exist
+await containerClient.CreateIfNotExistsAsync(
+    publicAccessType: PublicAccessType.None);
+
+// Upload a file to blob storage
+var blobClient = containerClient.GetBlobClient("my-document.pdf");
+await using var fileStream = File.OpenRead("local-file.pdf");
+await blobClient.UploadAsync(fileStream, overwrite: true);
+
+// Download a blob
+var downloadResponse = await blobClient.DownloadAsync();
+await using var downloadFileStream = File.OpenWrite("downloaded-file.pdf");
+await downloadResponse.Value.Content.CopyToAsync(downloadFileStream);
+
+// List all blobs in a container
+await foreach (var blobItem in containerClient.GetBlobsAsync())
+{
+    Console.WriteLine($"Blob: {blobItem.Name}, Size: {blobItem.Properties.ContentLength} bytes");
+}
+
+// Delete a blob
+await blobClient.DeleteIfExistsAsync();
+```
+
+For blob storage authentication to work, your credential (whether it is your user account, a managed identity, or a service principal) needs to have the appropriate role assigned in Azure. The most common roles are Storage Blob Data Reader for read-only access, Storage Blob Data Contributor for read and write access, or Storage Blob Data Owner for full control including the ability to set permissions. You assign these roles in the Azure Portal under the storage account's Access Control section.
+
+### Azure Cosmos DB: NoSQL Database at Scale
+
+Azure Cosmos DB is Microsoft's globally distributed, multi-model database service that provides low-latency access to your data at global scale. The Azure.Cosmos package provides the CosmosClient for connecting to Cosmos DB and performing database operations. Cosmos DB supports multiple APIs including SQL, MongoDB, Cassandra, and others, but the authentication mechanism remains the same across all APIs.
+
+Here is how you authenticate and work with Cosmos DB:
+
+```csharp
+using Azure.Identity;
+using Microsoft.Azure.Cosmos;
+
+// Create a credential for authentication
+var credential = new DefaultAzureCredential();
+
+// Cosmos DB endpoint URL
+var cosmosDbEndpoint = "https://your-cosmosdb-account.documents.azure.com:443/";
+
+// Create CosmosClient with Azure AD authentication
+// This uses role-based access control instead of master keys
+var cosmosClient = new CosmosClient(
+    accountEndpoint: cosmosDbEndpoint,
+    tokenCredential: credential);
+
+// Alternative: Using explicit ManagedIdentityCredential for production
+var managedIdentityCredential = new ManagedIdentityCredential();
+var cosmosClientWithMI = new CosmosClient(
+    accountEndpoint: cosmosDbEndpoint,
+    tokenCredential: managedIdentityCredential);
+
+// Alternative: Using ClientSecretCredential with service principal
+var clientSecretCredential = new ClientSecretCredential(
+    tenantId: "your-tenant-id",
+    clientId: "your-client-id",
+    clientSecret: "your-client-secret");
+var cosmosClientWithSP = new CosmosClient(
+    accountEndpoint: cosmosDbEndpoint,
+    tokenCredential: clientSecretCredential);
+
+// Working with Cosmos DB after authentication
+// Get or create a database
+var database = await cosmosClient.CreateDatabaseIfNotExistsAsync("my-database");
+
+// Get or create a container (like a table in SQL databases)
+var container = await database.Database.CreateContainerIfNotExistsAsync(
+    id: "my-container",
+    partitionKeyPath: "/customerId");
+
+// Insert a document
+var newItem = new
+{
+    id = Guid.NewGuid().ToString(),
+    customerId = "customer-123",
+    name = "Product Order",
+    amount = 150.00,
+    timestamp = DateTime.UtcNow
+};
+
+var createResponse = await container.Container.CreateItemAsync(
+    item: newItem,
+    partitionKey: new PartitionKey("customer-123"));
+
+// Query documents using SQL-like syntax
+var queryDefinition = new QueryDefinition(
+    "SELECT * FROM c WHERE c.customerId = @customerId")
+    .WithParameter("@customerId", "customer-123");
+
+using var queryIterator = container.Container.GetItemQueryIterator<dynamic>(queryDefinition);
+while (queryIterator.HasMoreResults)
+{
+    var response = await queryIterator.ReadNextAsync();
+    foreach (var item in response)
+    {
+        Console.WriteLine($"Document: {item}");
+    }
+}
+
+// Update a document
+newItem = new
+{
+    id = newItem.id,
+    customerId = "customer-123",
+    name = "Product Order",
+    amount = 175.00, // Updated amount
+    timestamp = DateTime.UtcNow
+};
+
+await container.Container.ReplaceItemAsync(
+    item: newItem,
+    id: newItem.id,
+    partitionKey: new PartitionKey("customer-123"));
+
+// Delete a document
+await container.Container.DeleteItemAsync<dynamic>(
+    id: newItem.id,
+    partitionKey: new PartitionKey("customer-123"));
+```
+
+For Cosmos DB authentication to work with Azure AD credentials, you need to assign roles to your identity. Cosmos DB uses custom role definitions rather than the built-in Azure RBAC roles. You can assign roles like Cosmos DB Built-in Data Reader for read access or Cosmos DB Built-in Data Contributor for read and write access. These roles are assigned through the Azure Portal or using Azure CLI commands specific to Cosmos DB's role-based access control system.
+
+### Azure SQL Database: Relational Data in the Cloud
+
+Azure SQL Database is a fully managed relational database service that provides SQL Server capabilities in the cloud. When connecting to Azure SQL with Azure AD authentication, you use your Azure AD credentials instead of SQL username and password authentication, which provides better security through centralized identity management and the ability to use managed identities.
+
+Here is how you authenticate to Azure SQL Database using Azure AD credentials:
+
+```csharp
+using Azure.Identity;
+using Azure.Core;
+using Microsoft.Data.SqlClient;
+
+// Create a credential for authentication
+var credential = new DefaultAzureCredential();
+
+// APPROACH 1: Using Azure AD authentication with connection string
+// The AccessToken parameter tells SQL Server to use Azure AD token authentication
+var connectionString = new SqlConnectionStringBuilder
+{
+    DataSource = "your-server.database.windows.net",
+    InitialCatalog = "your-database",
+    Encrypt = true,
+    TrustServerCertificate = false
+}.ConnectionString;
+
+// Get an access token from Azure AD for SQL Database
+// The scope for Azure SQL is always "https://database.windows.net/.default"
+var tokenRequestContext = new TokenRequestContext(
+    new[] { "https://database.windows.net/.default" });
+var accessToken = await credential.GetTokenAsync(tokenRequestContext, default);
+
+using var connection = new SqlConnection(connectionString);
+connection.AccessToken = accessToken.Token;
+await connection.OpenAsync();
+
+// APPROACH 2: Using Azure AD authentication with SqlConnection
+// This approach is more streamlined for managed identity scenarios
+var connectionStringBuilder = new SqlConnectionStringBuilder
+{
+    DataSource = "your-server.database.windows.net",
+    InitialCatalog = "your-database",
+    Authentication = SqlAuthenticationMethod.ActiveDirectoryDefault,
+    Encrypt = true
+};
+
+using var connectionAD = new SqlConnection(connectionStringBuilder.ConnectionString);
+await connectionAD.OpenAsync();
+
+// Working with Azure SQL Database after authentication
+// Execute a query
+using var command = new SqlCommand(
+    "SELECT TOP 10 * FROM Products WHERE Category = @category", 
+    connection);
+command.Parameters.AddWithValue("@category", "Electronics");
+
+using var reader = await command.ExecuteReaderAsync();
+while (await reader.ReadAsync())
+{
+    Console.WriteLine($"Product: {reader["ProductName"]}, Price: {reader["Price"]}");
+}
+
+// Insert data
+using var insertCommand = new SqlCommand(
+    @"INSERT INTO Products (ProductName, Category, Price, CreatedDate) 
+      VALUES (@name, @category, @price, @createdDate)", 
+    connection);
+insertCommand.Parameters.AddWithValue("@name", "New Product");
+insertCommand.Parameters.AddWithValue("@category", "Electronics");
+insertCommand.Parameters.AddWithValue("@price", 299.99);
+insertCommand.Parameters.AddWithValue("@createdDate", DateTime.UtcNow);
+
+var rowsAffected = await insertCommand.ExecuteNonQueryAsync();
+Console.WriteLine($"Inserted {rowsAffected} row(s)");
+
+// Use stored procedures
+using var storedProcCommand = new SqlCommand("usp_GetOrdersByCustomer", connection);
+storedProcCommand.CommandType = System.Data.CommandType.StoredProcedure;
+storedProcCommand.Parameters.AddWithValue("@customerId", 12345);
+
+using var spReader = await storedProcCommand.ExecuteReaderAsync();
+while (await spReader.ReadAsync())
+{
+    Console.WriteLine($"Order ID: {spReader["OrderId"]}, Total: {spReader["OrderTotal"]}");
+}
+```
+
+For Azure SQL authentication to work, you need to configure Azure AD authentication on your SQL Server and create a database user for your Azure AD identity. In SQL Server Management Studio or through T-SQL, you run commands like CREATE USER [your-app-name] FROM EXTERNAL PROVIDER and then grant appropriate permissions like GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::dbo TO [your-app-name]. The exact commands depend on whether you are using a user account, managed identity, or service principal.
+
+### Azure Service Bus: Reliable Messaging
+
+Azure Service Bus is a fully managed enterprise message broker that provides reliable message delivery with features like queues, topics, subscriptions, and advanced routing. The Azure.Messaging.ServiceBus package provides the ServiceBusClient for connecting to Service Bus and sending or receiving messages.
+
+Here is how you authenticate and work with Azure Service Bus:
+
+```csharp
+using Azure.Identity;
+using Azure.Messaging.ServiceBus;
+
+// Create a credential for authentication
+var credential = new DefaultAzureCredential();
+
+// Service Bus namespace (without the .servicebus.windows.net suffix in some constructors)
+var serviceBusNamespace = "your-namespace.servicebus.windows.net";
+
+// Create ServiceBusClient with Azure AD authentication
+var serviceBusClient = new ServiceBusClient(
+    fullyQualifiedNamespace: serviceBusNamespace,
+    credential: credential);
+
+// Alternative: Using ManagedIdentityCredential explicitly
+var managedIdentityCredential = new ManagedIdentityCredential();
+var serviceBusClientWithMI = new ServiceBusClient(
+    fullyQualifiedNamespace: serviceBusNamespace,
+    credential: managedIdentityCredential);
+
+// Alternative: Using ClientSecretCredential with service principal
+var clientSecretCredential = new ClientSecretCredential(
+    tenantId: "your-tenant-id",
+    clientId: "your-client-id",
+    clientSecret: "your-client-secret");
+var serviceBusClientWithSP = new ServiceBusClient(
+    fullyQualifiedNamespace: serviceBusNamespace,
+    credential: clientSecretCredential);
+
+// SENDING MESSAGES to a queue
+var queueName = "my-queue";
+var sender = serviceBusClient.CreateSender(queueName);
+
+// Send a single message
+var message = new ServiceBusMessage("Hello, Service Bus!")
+{
+    // Add custom properties to the message
+    ApplicationProperties = {
+        { "Priority", "High" },
+        { "CustomerId", "customer-123" }
+    },
+    // Set message ID for deduplication
+    MessageId = Guid.NewGuid().ToString(),
+    // Set time to live for the message
+    TimeToLive = TimeSpan.FromMinutes(30)
+};
+
+await sender.SendMessageAsync(message);
+
+// Send a batch of messages for better performance
+var messageBatch = await sender.CreateMessageBatchAsync();
+for (int i = 0; i < 10; i++)
+{
+    var batchMessage = new ServiceBusMessage($"Message {i}");
+    
+    // Try to add the message to the batch
+    // If the batch is full, send it and create a new one
+    if (!messageBatch.TryAddMessage(batchMessage))
+    {
+        await sender.SendMessagesAsync(messageBatch);
+        messageBatch = await sender.CreateMessageBatchAsync();
+        messageBatch.TryAddMessage(batchMessage);
+    }
+}
+
+// Send any remaining messages in the batch
+if (messageBatch.Count > 0)
+{
+    await sender.SendMessagesAsync(messageBatch);
+}
+
+await sender.CloseAsync();
+
+// RECEIVING MESSAGES from a queue
+var receiver = serviceBusClient.CreateReceiver(queueName);
+
+// Receive messages one at a time
+var receivedMessage = await receiver.ReceiveMessageAsync(
+    maxWaitTime: TimeSpan.FromSeconds(5));
+
+if (receivedMessage != null)
+{
+    Console.WriteLine($"Received message: {receivedMessage.Body}");
+    
+    // Access custom properties
+    if (receivedMessage.ApplicationProperties.ContainsKey("Priority"))
+    {
+        Console.WriteLine($"Priority: {receivedMessage.ApplicationProperties["Priority"]}");
+    }
+    
+    // Complete the message to remove it from the queue
+    // This tells Service Bus that processing was successful
+    await receiver.CompleteMessageAsync(receivedMessage);
+}
+
+// Receive multiple messages as a batch
+var messages = await receiver.ReceiveMessagesAsync(
+    maxMessages: 10,
+    maxWaitTime: TimeSpan.FromSeconds(5));
+
+foreach (var msg in messages)
+{
+    try
+    {
+        // Process the message
+        Console.WriteLine($"Processing: {msg.Body}");
+        
+        // Complete the message after successful processing
+        await receiver.CompleteMessageAsync(msg);
+    }
+    catch (Exception ex)
+    {
+        // If processing fails, abandon the message so it can be retried
+        // Or dead-letter it if it's a permanent failure
+        await receiver.DeadLetterMessageAsync(msg, 
+            deadLetterReason: "ProcessingFailed",
+            deadLetterErrorDescription: ex.Message);
+    }
+}
+
+await receiver.CloseAsync();
+
+// WORKING WITH TOPICS AND SUBSCRIPTIONS for pub/sub scenarios
+var topicSender = serviceBusClient.CreateSender("my-topic");
+var topicMessage = new ServiceBusMessage("Topic message")
+{
+    Subject = "order.created" // Used for subscription filtering
+};
+await topicSender.SendMessageAsync(topicMessage);
+
+// Create a receiver for a specific subscription on the topic
+var subscriptionReceiver = serviceBusClient.CreateReceiver(
+    topicName: "my-topic",
+    subscriptionName: "my-subscription");
+
+var topicMessages = await subscriptionReceiver.ReceiveMessagesAsync(
+    maxMessages: 10,
+    maxWaitTime: TimeSpan.FromSeconds(5));
+
+foreach (var msg in topicMessages)
+{
+    Console.WriteLine($"Subscription received: {msg.Body}");
+    await subscriptionReceiver.CompleteMessageAsync(msg);
+}
+
+// Always dispose of the client when done
+await serviceBusClient.DisposeAsync();
+```
+
+For Service Bus authentication to work with Azure AD credentials, you need to assign the appropriate role to your identity. The most common roles are Azure Service Bus Data Receiver for receiving messages, Azure Service Bus Data Sender for sending messages, or Azure Service Bus Data Owner for full access including the ability to manage queues and topics. These roles are assigned in the Azure Portal under the Service Bus namespace's Access Control section. The beauty of using Azure AD authentication instead of connection strings is that you can grant different permissions to different identities, following the principle of least privilege where each component only has the permissions it actually needs.
+
+### Azure Key Vault: Secrets and Key Management
+
+Azure Key Vault is a cloud service for securely storing and accessing secrets, keys, and certificates. We have already worked extensively with Key Vault in our JWT authentication guide, but let me show you a more comprehensive example that demonstrates different types of operations you can perform with Key Vault using various credential types.
+
+```csharp
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+using Azure.Security.KeyVault.Keys;
+using Azure.Security.KeyVault.Certificates;
+
+// Create a credential for authentication
+var credential = new DefaultAzureCredential();
+
+// Key Vault URL
+var keyVaultUrl = "https://your-keyvault.vault.azure.net/";
+
+// WORKING WITH SECRETS (like API keys, connection strings, passwords)
+var secretClient = new SecretClient(new Uri(keyVaultUrl), credential);
+
+// Store a secret
+var secretName = "database-connection-string";
+var secretValue = "Server=myserver;Database=mydb;User Id=myuser;Password=mypass;";
+await secretClient.SetSecretAsync(secretName, secretValue);
+
+// Retrieve a secret
+KeyVaultSecret secret = await secretClient.GetSecretAsync(secretName);
+Console.WriteLine($"Retrieved secret value: {secret.Value}");
+
+// List all secrets (returns metadata only, not values)
+await foreach (var secretProperties in secretClient.GetPropertiesOfSecretsAsync())
+{
+    Console.WriteLine($"Secret: {secretProperties.Name}, Enabled: {secretProperties.Enabled}");
+}
+
+// Update secret metadata (like expiration date)
+var secretProperties = await secretClient.GetSecretAsync(secretName);
+secretProperties.Value.Properties.ExpiresOn = DateTimeOffset.UtcNow.AddYears(1);
+await secretClient.UpdateSecretPropertiesAsync(secretProperties.Value.Properties);
+
+// Delete a secret (soft delete - can be recovered)
+var deleteOperation = await secretClient.StartDeleteSecretAsync(secretName);
+await deleteOperation.WaitForCompletionAsync();
+
+// WORKING WITH CRYPTOGRAPHIC KEYS (for encryption, signing, etc.)
+var keyClient = new KeyClient(new Uri(keyVaultUrl), credential);
+
+// Create an RSA key for cryptographic operations
+var rsaKeyName = "my-encryption-key";
+var rsaKey = await keyClient.CreateRsaKeyAsync(
+    new CreateRsaKeyOptions(rsaKeyName)
+    {
+        KeySize = 2048,
+        ExpiresOn = DateTimeOffset.UtcNow.AddYears(2),
+        KeyOperations = {
+            KeyOperation.Encrypt,
+            KeyOperation.Decrypt,
+            KeyOperation.Sign,
+            KeyOperation.Verify
+        }
+    });
+
+Console.WriteLine($"Created key: {rsaKey.Value.Name}, Type: {rsaKey.Value.KeyType}");
+
+// List all keys
+await foreach (var keyProperties in keyClient.GetPropertiesOfKeysAsync())
+{
+    Console.WriteLine($"Key: {keyProperties.Name}, Type: {keyProperties.KeyType}");
+}
+
+// Get a specific key
+KeyVaultKey key = await keyClient.GetKeyAsync(rsaKeyName);
+
+// Perform cryptographic operations using the key
+// This is useful for encryption, decryption, signing, and verification
+// The actual private key never leaves the Key Vault HSM
+var cryptoClient = new Azure.Security.KeyVault.Keys.Cryptography.CryptographyClient(
+    key.Id, 
+    credential);
+
+// Encrypt data using the key
+var plaintext = "Sensitive data to encrypt";
+var plaintextBytes = System.Text.Encoding.UTF8.GetBytes(plaintext);
+var encryptResult = await cryptoClient.EncryptAsync(
+    Azure.Security.KeyVault.Keys.Cryptography.EncryptionAlgorithm.RsaOaep256,
+    plaintextBytes);
+
+Console.WriteLine($"Encrypted data: {Convert.ToBase64String(encryptResult.Ciphertext)}");
+
+// Decrypt data using the same key
+var decryptResult = await cryptoClient.DecryptAsync(
+    Azure.Security.KeyVault.Keys.Cryptography.EncryptionAlgorithm.RsaOaep256,
+    encryptResult.Ciphertext);
+
+var decryptedText = System.Text.Encoding.UTF8.GetString(decryptResult.Plaintext);
+Console.WriteLine($"Decrypted data: {decryptedText}");
+
+// WORKING WITH CERTIFICATES (for TLS/SSL, code signing, etc.)
+var certificateClient = new CertificateClient(new Uri(keyVaultUrl), credential);
+
+// Create a self-signed certificate
+var certificateName = "my-certificate";
+var certificateOperation = await certificateClient.StartCreateCertificateAsync(
+    certificateName,
+    new CertificatePolicy("self", "CN=MyApp")
+    {
+        KeyType = CertificateKeyType.Rsa,
+        KeySize = 2048,
+        Exportable = true,
+        ValidityInMonths = 12,
+        KeyUsage = {
+            CertificateKeyUsage.DigitalSignature,
+            CertificateKeyUsage.KeyEncipherment
+        }
+    });
+
+// Wait for certificate creation to complete
+// Certificate creation can take a few seconds
+await certificateOperation.WaitForCompletionAsync(TimeSpan.FromSeconds(20));
+
+// Retrieve the certificate
+KeyVaultCertificateWithPolicy certificate = 
+    await certificateClient.GetCertificateAsync(certificateName);
+
+Console.WriteLine($"Certificate: {certificate.Name}, Thumbprint: {certificate.Properties.Thumbprint}");
+
+// List all certificates
+await foreach (var certProperties in certificateClient.GetPropertiesOfCertificatesAsync())
+{
+    Console.WriteLine($"Certificate: {certProperties.Name}, Expires: {certProperties.ExpiresOn}");
+}
+```
+
+For Key Vault operations to work with Azure AD credentials, you need to assign the appropriate roles. Azure provides granular roles for Key Vault including Key Vault Secrets User for reading secrets, Key Vault Secrets Officer for managing secrets, Key Vault Crypto User for using keys for cryptographic operations, Key Vault Crypto Officer for managing keys, Key Vault Certificate User for reading certificates, and Key Vault Certificate Officer for managing certificates. You can assign different roles to different identities based on what each component of your system needs to do, ensuring that each identity has only the minimum permissions necessary for its function.
+
+## Best Practices and Security Considerations
+
+As you work with Azure authentication in your applications, there are several best practices and security considerations you should always keep in mind. These practices will help you build more secure, maintainable, and reliable applications that properly protect your Azure resources and the data they contain.
+
+The first and most important principle is to always prefer managed identities over service principals when your code runs in Azure. Managed identities eliminate the need to manage credentials entirely because Azure handles authentication automatically. There are no secrets to rotate, no credentials to protect in configuration files, and no risk of accidentally committing credentials to source control. When you use a managed identity, your application's identity exists only within Azure's infrastructure and cannot be used from outside Azure, which provides an additional layer of security. Every Azure service that hosts code, including App Service, Azure Functions, Container Apps, Virtual Machines, Azure Kubernetes Service, and many others, supports managed identities. If your code runs in any of these services, you should always use managed identity as your primary authentication method.
+
+The second principle is to never hardcode credentials in your source code or configuration files. This might seem obvious, but it is one of the most common security mistakes developers make. When you hardcode credentials, they become visible to anyone who has access to your source code repository, your deployed configuration files, or your container images. Even if you delete the credentials later, they remain in your Git history unless you take special steps to rewrite that history. Instead of hardcoding credentials, use environment variables, Azure Key Vault secrets, or the .NET Secret Manager for local development. When you need to use service principal credentials, load them from secure configuration sources that are never committed to source control.
+
+The third principle is to use the principle of least privilege when assigning permissions to identities. Every identity in your system should have only the minimum permissions necessary to perform its intended function, and no more. If a component only needs to read data from Blob Storage, grant it the Storage Blob Data Reader role, not the Storage Blob Data Owner role which includes permissions to delete data and modify permissions. If a service only needs to send messages to Service Bus, grant it the Azure Service Bus Data Sender role, not the Azure Service Bus Data Owner role. By limiting permissions to exactly what is needed, you reduce the potential damage if that identity is compromised. An attacker who gains control of an identity can only do what that identity is permitted to do, so limiting those permissions limits the blast radius of a potential security breach.
+
+The fourth principle is to implement proper secret rotation for any secrets you must manage. While managed identities eliminate the need for secret rotation entirely, there are scenarios where you must use service principals with client secrets, such as when authenticating from on-premises environments or other cloud providers. When you use client secrets, you should rotate them regularly according to your organization's security policies. Many organizations require secret rotation every ninety days or every year. Azure Key Vault supports secret versioning, which allows you to create a new version of a secret while the old version remains valid. This enables you to update your application to use the new secret and verify it works before deleting the old version, providing a smooth transition without downtime.
+
+The fifth principle is to use separate credentials for different environments. Your development, staging, and production environments should each use different service principals, different managed identities, or different user accounts for authentication. This separation ensures that if development credentials are compromised, they cannot be used to access production resources. It also makes it easier to audit and monitor access to your production environment because you can clearly distinguish between production access and non-production access in your logs. Most organizations implement this separation through Azure AD by creating separate App Registrations for each environment, or by using different subscriptions or resource groups for each environment with separate managed identities.
+
+The sixth principle is to enable and monitor audit logging for all authentication and access attempts. Azure provides comprehensive logging capabilities through Azure Monitor and Azure Activity Logs that record every authentication attempt, every access to resources, and every permission change. You should enable diagnostic logging on all your Azure resources and configure alerts for suspicious activities like repeated authentication failures, access from unexpected IP addresses, or unusual patterns of resource access. These logs are invaluable for security investigations, compliance audits, and understanding how your application actually uses Azure resources in production.
+
+The seventh principle is to regularly review and clean up unused credentials and permissions. Over time, as your application evolves, you may create service principals or grant permissions that are no longer needed. Perhaps you created a service principal for testing that is no longer used, or you granted permissions to a managed identity for a feature that was later removed. Unused credentials and permissions represent security risks because they could be discovered and exploited by attackers. You should periodically audit your Azure AD App Registrations, service principals, managed identities, and role assignments to identify and remove anything that is no longer actively used.
+
+## Choosing the Right Authentication Method
+
+Choosing which authentication method to use in your application depends on several factors including where your code runs, who or what is initiating the action, what Azure resources you need to access, and what your security and compliance requirements are. Let me walk you through a decision framework that will help you choose the right authentication method for different scenarios.
+
+When your code runs in Azure services like App Service, Azure Functions, Container Apps, or Virtual Machines, you should always use managed identity as your primary authentication method. This is the gold standard for Azure authentication because it provides the best security with the least operational overhead. Enable system-assigned managed identity on your Azure resource, grant that identity the necessary permissions to access the Azure resources you need, and use DefaultAzureCredential in your code. DefaultAzureCredential will automatically discover and use the managed identity when running in Azure. This approach requires no credential management, no secret rotation, and no configuration beyond enabling the managed identity and assigning permissions. It is secure, simple, and aligns with Microsoft's recommended best practices for cloud applications.
+
+When you are developing locally on your development machine, you have several good options depending on your team's preferences and tooling. The simplest approach for most developers is to use Azure CLI authentication by running az login once to authenticate with your Azure account, then using DefaultAzureCredential in your code which will automatically discover and use those cached credentials. This approach works across all operating systems, all development tools, and all programming languages. An alternative approach if you use Visual Studio is to sign into Visual Studio with your Azure account, and DefaultAzureCredential will use those credentials automatically. Both approaches provide a seamless development experience where you authenticate once and all your Azure SDK calls work without additional configuration. If you need more explicit control or want to ensure consistent authentication across your entire team, you can create a service principal specifically for development, store its credentials in User Secrets or environment variables, and use ClientSecretCredential or configure DefaultAzureCredential to use environment variables.
+
+When your code runs in CI/CD pipelines like Azure DevOps or GitHub Actions, you should use service principal authentication with the credentials stored as pipeline secrets. Create a service principal specifically for your CI/CD pipeline, grant it only the permissions needed for deployment and testing activities, and configure your pipeline to provide the client ID, tenant ID, and client secret as environment variables that DefaultAzureCredential can discover. Most CI/CD platforms provide secure secret storage that encrypts secrets and only exposes them during pipeline execution, which makes this a secure approach for automated scenarios. Some newer Azure services also support using federated credentials with GitHub Actions, which eliminates the need for client secrets entirely by using OpenID Connect tokens, but this is a more advanced scenario that requires additional configuration.
+
+When your code runs on-premises or in other cloud providers and needs to access Azure resources, you must use service principal authentication because managed identity is not available outside of Azure. Create a service principal for your application, securely store its credentials using whatever secret management solution your environment provides such as HashiCorp Vault or AWS Secrets Manager, and use ClientSecretCredential to authenticate. You should treat these service principal credentials with the same level of protection you would give to database passwords or encryption keys because anyone who obtains them can access your Azure resources. Implement secret rotation policies and monitor usage to detect any unauthorized access attempts.
+
+When you are building desktop applications, command-line tools, or other interactive applications where a human user is present, you should use InteractiveBrowserCredential to authenticate the user through their Azure AD account. This provides the best user experience because users authenticate with their own credentials rather than the application using shared credentials. The interactive browser flow follows OAuth standards and ensures that the application never sees or handles the user's password. The user's credentials are entered directly into Azure AD's sign-in page, and Azure AD returns only authorization codes and access tokens to your application. This approach is perfect for administrative tools, developer utilities, and any application where user context is important for authorization decisions.
+
+When you need to access Azure resources on behalf of users in a web application, you should implement the OAuth authorization code flow with Azure AD as your identity provider. This is more complex than the other scenarios because it involves redirecting users to Azure AD for authentication, handling the redirect back to your application with an authorization code, exchanging that code for tokens, and managing token refresh. ASP.NET Core provides built-in middleware for this scenario through the Microsoft.Identity.Web package, which simplifies the implementation significantly. This approach allows your web application to access Azure resources using the signed-in user's identity and permissions, which is important for scenarios where different users should have different levels of access to your application's features and data.
+
+## Troubleshooting Common Authentication Issues
+
+Even with a solid understanding of Azure authentication, you will occasionally encounter issues where authentication fails or behaves unexpectedly. Understanding how to troubleshoot these issues will save you significant time and frustration. Let me walk you through the most common authentication problems and how to diagnose and resolve them.
+
+One of the most common issues is the CredentialUnavailableException that says DefaultAzureCredential failed to retrieve a token from the included credentials. This error means that DefaultAzureCredential tried all of its authentication methods and none of them succeeded. The most common cause during local development is that you have not authenticated with any of the credential sources that DefaultAzureCredential checks. The solution depends on which credential source you want to use. If you want to use Azure CLI, run az login and sign in with your Azure account. If you want to use Visual Studio, open Visual Studio, go to Tools then Options, expand Azure Service Authentication, and sign in with your Azure account. If you want to use a service principal, set the AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_CLIENT_SECRET environment variables with your service principal credentials. The error message often includes details about which credential sources were tried and why each one failed, which can guide you to the specific issue.
+
+Another common authentication issue is receiving an HTTP 403 Forbidden error or an authorization error saying the caller is not authorized to perform the action on the resource. This error means that authentication succeeded—Azure knows who you are—but you do not have permission to perform the requested operation. The solution is to check and grant the appropriate permissions. Go to the Azure resource you are trying to access in the Azure Portal, navigate to Access Control (IAM), and check whether your identity has a role assignment that grants the necessary permissions. Remember that role assignments can take a few minutes to propagate through Azure's distributed systems, so if you just granted permissions, wait a minute and try again. Also verify that you are granting permissions to the correct identity. If you are using a managed identity, grant permissions to the managed identity, not to your personal account. If you are using a service principal, grant permissions to the App Registration or service principal, not to your user account.
+
+Token expiration issues can also cause authentication failures that appear intermittently. Azure AD access tokens typically expire after one hour, and the Azure SDK clients automatically handle token refresh when using credential objects like DefaultAzureCredential. However, if you manually obtain a token using GetTokenAsync and cache it for reuse, you need to handle token expiration yourself. The AccessToken structure returned by GetTokenAsync includes an ExpiresOn property that tells you when the token expires. You should check this expiration time before using a cached token and request a new token if the current one has expired or is about to expire soon. A good practice is to refresh tokens when they have less than five minutes of validity remaining to account for clock skew between systems.
+
+Multi-tenant authentication scenarios can cause confusion when you have access to multiple Azure AD tenants. By default, DefaultAzureCredential authenticates to your home tenant, which might not be the tenant that contains the Azure resources you need to access. If you encounter authentication errors and you have access to multiple tenants, verify which tenant you are authenticating to and which tenant contains the resource. You can specify a tenant ID explicitly by creating DefaultAzureCredentialOptions with the TenantId property set, or by configuring your credential source to use a specific tenant. For example, when using Azure CLI, you can run az login --tenant your-tenant-id to authenticate to a specific tenant.
+
+Network and firewall issues can cause authentication to fail with timeout errors or connection failures. Azure AD authentication requires your application to make HTTPS requests to Azure AD endpoints, typically login.microsoftonline.com and other Microsoft domains. If your application runs in an environment with restrictive firewalls or network policies, these requests might be blocked. Check your network logs and firewall rules to ensure that outbound HTTPS traffic to Microsoft Azure domains is allowed. Some organizations use proxy servers for all outbound traffic, in which case you need to configure the Azure SDK clients to use your proxy server through the HttpClient configuration.
+
+When troubleshooting authentication issues, enable diagnostic logging to see detailed information about what the authentication libraries are doing. The Azure.Identity library emits detailed logs through the Azure SDK's logging infrastructure that can show you which credential sources are being tried, which ones are failing, and why they are failing. You can enable console logging to see these diagnostic messages, which is invaluable for understanding authentication problems. Just remember to disable verbose logging in production because it can log sensitive information and create performance overhead.
+
+## Summary and Key Takeaways
+
+Azure authentication might seem complex at first with its various credential types and authentication methods, but understanding the underlying principles makes it much more approachable. The key insight is that Azure provides different authentication mechanisms to support different scenarios, from local development to production deployments, from interactive applications to background services, and from Azure-hosted applications to on-premises systems.
+
+DefaultAzureCredential is your starting point for most scenarios because it adapts automatically to whatever environment your code runs in. In production with managed identity enabled, it uses that managed identity. During development with Azure CLI credentials, it uses those credentials. In CI/CD pipelines with environment variables set, it uses service principal authentication. This flexibility means you can write authentication code once and have it work everywhere.
+
+Managed identities represent the future of Azure authentication and should be your default choice when running code in Azure. They eliminate credential management entirely, provide the highest level of security, and align with Microsoft's recommended best practices. Use system-assigned managed identities for most scenarios where each deployment has its own isolated identity, and consider user-assigned managed identities when you need to share an identity across multiple resources.
+
+Service principals with client secrets remain necessary for scenarios where managed identity is not available, such as on-premises applications, applications in other clouds, or development and CI/CD scenarios where you need explicit control over authentication. Protect these credentials carefully, rotate them regularly, and use separate service principals for different environments.
+
+Understanding how to authenticate with the common Azure services—Blob Storage, Cosmos DB, Azure SQL, Service Bus, and Key Vault—gives you the foundation to work with the entire Azure ecosystem since the patterns remain consistent across all Azure services. Create a credential, pass it to the service-specific client, and the client handles authentication automatically.
+
+By following best practices like preferring managed identities, never hardcoding credentials, implementing least privilege access, enabling audit logging, and regularly reviewing permissions, you can build secure, maintainable applications that properly protect your Azure resources and the data they contain. Authentication is not just a technical implementation detail but a critical security boundary that protects your entire application, so investing time to understand and implement it correctly pays dividends throughout your application's lifetime.

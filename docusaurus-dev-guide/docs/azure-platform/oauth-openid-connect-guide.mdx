@@ -5,14 +5,1674 @@ sidebar_position: 6
 tags: [azure, oauth, openid-connect, authentication, dotnet]
 ---
 
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Verify if it is accurate"/>
+
 # OAuth 2.0 vs OpenID Connect: A Complete Guide for .NET Developers
 
-Covers the key differences between OAuth 2.0 (authorization) and OpenID Connect (authentication), token flows, scopes, and practical implementation in .NET.
+## Table of Contents
+1. [Understanding the Fundamental Difference](#understanding-the-fundamental-difference)
+2. [Token Types and Their Purposes](#token-types-and-their-purposes)
+3. [OAuth 2.0 Flows Explained](#oauth-20-flows-explained)
+4. [Authentication Methods in ASP.NET Core](#authentication-methods-in-aspnet-core)
+5. [Real-World Implementation Scenarios](#real-world-implementation-scenarios)
+6. [Security Best Practices](#security-best-practices)
 
-<iframe
-  src="https://claude.ai/public/artifacts/dfa311de-b6ef-4ba7-a92f-9f7c285223d7/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="OAuth 2.0 vs OpenID Connect"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+---
+
+## Understanding the Fundamental Difference
+
+When you're building modern applications, authentication and authorization are two distinct problems that often get confused with one another. OAuth 2.0 and OpenID Connect address these different concerns, and understanding their relationship is crucial for implementing security correctly in your applications.
+
+**OAuth 2.0** is fundamentally an authorization framework. It was designed to solve a specific problem: how can one application access resources on behalf of a user without the user having to share their password? Imagine you want to use a photo printing service that needs to access your photos stored in Google Drive. OAuth 2.0 allows you to grant the printing service limited access to your Google Drive without ever giving them your Google password. The key concept here is **delegation of access rights**.
+
+**OpenID Connect (OIDC)**, on the other hand, is an authentication protocol that sits on top of OAuth 2.0. While OAuth answers the question "What can this application access?", OpenID Connect answers "Who is this user?" When you click "Sign in with Google" or "Sign in with Microsoft" on a website, that's OpenID Connect at work. It not only handles the authorization flow but also provides standardized information about the authenticated user's identity.
+
+The relationship between these two protocols is hierarchical. OpenID Connect extends OAuth 2.0 by adding an additional token type called the ID Token, which contains claims about the authentication event and the user's identity. You can think of OAuth 2.0 as the foundation and OpenID Connect as a specialized extension built on that foundation specifically for authentication scenarios.
+
+### Key Differences at a Glance
+
+**Purpose:**
+- OAuth 2.0: Authorization (granting access to resources)
+- OpenID Connect: Authentication (verifying user identity)
+
+**Primary Token:**
+- OAuth 2.0: Access Token (opaque or JWT)
+- OpenID Connect: ID Token (always JWT) + Access Token
+
+**Use Cases:**
+- OAuth 2.0: API access, service-to-service authorization, delegated access
+- OpenID Connect: User login, single sign-on, identity verification
+
+**Information Provided:**
+- OAuth 2.0: What resources can be accessed, what permissions are granted
+- OpenID Connect: Who the user is, user profile information, authentication details
+
+---
+
+## Token Types and Their Purposes
+
+Understanding the different types of tokens is essential for working with these protocols effectively. Each token type serves a specific purpose in the security architecture of your application.
+
+### Access Token
+
+The Access Token is the primary artifact in OAuth 2.0. This token is like a temporary key that grants permission to access specific resources. Access tokens are typically opaque to client applications, meaning your application doesn't need to understand what's inside them. The application simply presents the access token to a resource server (like an API), and the resource server validates it to determine what access should be granted.
+
+Access tokens have a limited lifetime, usually ranging from a few minutes to an hour, which limits the damage if a token is compromised. They contain information about the granted permissions (scopes), the user they represent, and when they expire. In modern implementations, access tokens are often formatted as JSON Web Tokens (JWT), which allows resource servers to validate them without making a network call to the authorization server.
+
+**Key characteristics of Access Tokens:**
+- Short-lived (typically 5 minutes to 1 hour)
+- Contain authorization information (scopes, permissions)
+- Used to access protected resources (APIs)
+- Can be opaque or JWT format
+- Should never be read or interpreted by client applications (except for debugging)
+
+### ID Token
+
+The ID Token is unique to OpenID Connect and represents a significant addition to the OAuth 2.0 framework. Unlike access tokens, ID tokens are specifically designed to be read and understood by client applications. They're formatted as JSON Web Tokens (JWT), which means they contain a readable JSON payload with claims about the user.
+
+These claims might include the user's unique identifier (sub claim), their name, email address, when they authenticated (auth_time), and how they authenticated (amr claim for authentication method reference). The ID token is cryptographically signed so your application can verify it came from a trusted identity provider and hasn't been tampered with.
+
+**Key characteristics of ID Tokens:**
+- Always JWT format
+- Contains identity claims about the user
+- Cryptographically signed
+- Meant to be read by client applications
+- Should NOT be sent to APIs
+- Validates the authentication event occurred
+
+**Common ID Token Claims:**
+- `iss` (issuer): Who created and signed the token
+- `sub` (subject): Unique identifier for the user
+- `aud` (audience): Who the token is intended for (your client ID)
+- `exp` (expiration): When the token expires
+- `iat` (issued at): When the token was issued
+- `auth_time`: When the user authenticated
+- `nonce`: Unique value to prevent replay attacks
+- `name`, `email`, `picture`: User profile information
+
+### Refresh Token
+
+Refresh Tokens provide a way to obtain new access tokens without requiring the user to log in again. When an access token expires, your application can use the refresh token to request a new access token from the authorization server. Refresh tokens are long-lived credentials and must be stored very securely.
+
+Not all OAuth 2.0 flows include refresh tokens, and their use depends on the security requirements and the type of application you're building. For example, single-page applications traditionally didn't use refresh tokens due to security concerns about storing them in the browser, though this is changing with modern security practices.
+
+**Key characteristics of Refresh Tokens:**
+- Long-lived (days, weeks, or months)
+- Used to obtain new access tokens
+- Must be stored securely
+- Can be revoked by the authorization server
+- Should only be sent to the token endpoint
+- Often single-use (new refresh token issued with each refresh)
+
+---
+
+## OAuth 2.0 Flows Explained
+
+OAuth 2.0 defines several flows (also called grant types) for different scenarios. Understanding which flow to use is critical for building secure applications.
+
+### Authorization Code Flow
+
+This is the most secure and most commonly used flow for web applications. In this flow, the user is redirected to the authorization server where they authenticate. After successful authentication, the authorization server redirects back to your application with an authorization code. Your application then exchanges this code for tokens by making a server-to-server call to the token endpoint, including your client secret.
+
+This flow is secure because the tokens are never exposed in the browser's address bar, and the client secret is only used in a secure server-to-server communication. This is the recommended flow for any application that can securely store a client secret, including traditional web applications and server-side applications.
+
+**Best for:** Traditional web applications with a backend server
+
+### Authorization Code Flow with PKCE
+
+PKCE (Proof Key for Code Exchange, pronounced "pixie") is an extension to the Authorization Code Flow that makes it safe for public clients like mobile apps and single-page applications that cannot securely store a client secret. Instead of using a client secret, PKCE uses a dynamically generated code verifier and code challenge.
+
+When starting the flow, your application generates a random code verifier and creates a code challenge from it (usually by hashing it). The code challenge is sent with the authorization request. When exchanging the authorization code for tokens, your application sends the original code verifier. The authorization server verifies that the code verifier matches the code challenge, ensuring that the same application that started the flow is the one completing it.
+
+**Best for:** Single-page applications (SPAs), mobile applications, native desktop applications
+
+### Client Credentials Flow
+
+This flow is designed for machine-to-machine communication where there's no user involved. Your application authenticates directly with the authorization server using its client ID and client secret, and receives an access token. This is commonly used for microservices calling other microservices, batch jobs accessing APIs, or any scenario where an application needs to access resources under its own identity rather than on behalf of a user.
+
+**Best for:** Server-to-server communication, background services, daemon processes
+
+### Resource Owner Password Credentials Flow
+
+In this flow, the user provides their username and password directly to your application, which then sends them to the authorization server to obtain tokens. This flow should be avoided in almost all cases because it requires users to trust your application with their credentials, defeating much of the purpose of OAuth. It's only acceptable in highly trusted scenarios, such as a first-party mobile application for a service where the app and the authorization server are owned by the same organization.
+
+**Best for:** Legacy application migration (temporarily), highly trusted first-party applications (discouraged)
+
+### Implicit Flow
+
+This flow was designed for browser-based applications before PKCE was widely supported. Tokens are returned directly in the URL fragment after authentication, without an authorization code exchange step. This flow is now considered deprecated and should not be used for new applications. The Authorization Code Flow with PKCE is more secure and should be used instead.
+
+**Status:** Deprecated - use Authorization Code Flow with PKCE instead
+
+---
+
+## Authentication Methods in ASP.NET Core
+
+Now let's explore the various authentication methods you can configure in ASP.NET Core using the `builder.Services.AddAuthentication` method in your Program.cs file. Each method is suited for different scenarios, and understanding when to use each one will help you build more secure and maintainable applications.
+
+### 1. JWT Bearer Authentication
+
+JWT Bearer authentication is the most common approach for protecting APIs in modern applications. When you build a Web API that will be called by front-end applications, mobile apps, or other services, JWT Bearer authentication provides a stateless way to verify the caller's identity and permissions.
+
+In this approach, clients send an access token in the Authorization header of their HTTP requests using the format "Bearer {token}". Your API validates this token by checking its signature, expiration time, issuer, and audience claims. The beauty of JWT Bearer authentication is that it's stateless—your API doesn't need to store any session information or make database calls to validate each request. All the information needed for validation is contained within the token itself or can be retrieved from the authorization server's public keys.
+
+```csharp
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Configure JWT Bearer authentication for API protection
+// This is ideal for protecting APIs that will be called by SPAs, mobile apps, or other services
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        // The authority is your OAuth 2.0 authorization server's URL
+        // This tells the middleware where to find the signing keys to validate tokens
+        // For Azure AD: https://login.microsoftonline.com/{tenant-id}
+        // For Auth0: https://{your-domain}.auth0.com/
+        options.Authority = "https://your-auth-server.com";
+        
+        // The audience identifies which API this token is intended for
+        // This prevents tokens meant for other APIs from being accepted here
+        // Each API should have its own unique audience identifier
+        options.Audience = "your-api-identifier";
+        
+        // Require HTTPS metadata for production security
+        // Only set to false in development environments
+        options.RequireHttpsMetadata = true;
+        
+        // Token validation parameters define what makes a token valid
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            // Verify the token was issued by a trusted authorization server
+            ValidateIssuer = true,
+            ValidIssuer = "https://your-auth-server.com",
+            
+            // Verify the token is intended for this API
+            ValidateAudience = true,
+            ValidAudience = "your-api-identifier",
+            
+            // Verify the token hasn't expired
+            ValidateLifetime = true,
+            
+            // Verify the token's signature is valid
+            ValidateIssuerSigningKey = true,
+            
+            // Clock skew allows for small time differences between servers
+            // Default is 5 minutes, which is usually appropriate
+            ClockSkew = TimeSpan.FromMinutes(5),
+            
+            // Optional: Specify the signing key directly if not using authority
+            // This is useful for symmetric key scenarios
+            // IssuerSigningKey = new SymmetricSecurityKey(
+            //     Encoding.UTF8.GetBytes("your-256-bit-secret-key-here"))
+        };
+        
+        // Event handlers allow you to customize the authentication process
+        options.Events = new JwtBearerEvents
+        {
+            // Called after the token has been validated successfully
+            OnTokenValidated = context =>
+            {
+                // You can add custom validation logic here
+                // For example, check if the user is still active in your database
+                var userId = context.Principal?.FindFirst("sub")?.Value;
+                
+                // Example: Load user from database and validate status
+                // var userService = context.HttpContext.RequestServices
+                //     .GetRequiredService<IUserService>();
+                // var user = await userService.GetUserAsync(userId);
+                // if (!user.IsActive)
+                // {
+                //     context.Fail("User account is inactive");
+                // }
+                
+                return Task.CompletedTask;
+            },
+            
+            // Called when authentication fails
+            OnAuthenticationFailed = context =>
+            {
+                // Log authentication failures for security monitoring
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILogger<Program>>();
+                    
+                logger.LogWarning(
+                    "JWT authentication failed: {Error}. Token: {Token}", 
+                    context.Exception.Message,
+                    context.Request.Headers["Authorization"]);
+                
+                // You can customize the response here if needed
+                // context.Response.StatusCode = 401;
+                // context.Response.ContentType = "application/json";
+                
+                return Task.CompletedTask;
+            },
+            
+            // Called when a challenge is triggered (401 response)
+            OnChallenge = context =>
+            {
+                // Customize the 401 response
+                // By default, it returns WWW-Authenticate header
+                // You can override this to return a custom JSON response
+                
+                return Task.CompletedTask;
+            },
+            
+            // Called when the token is about to be validated
+            OnMessageReceived = context =>
+            {
+                // You can extract the token from alternative locations
+                // For example, from a query string for SignalR connections
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                
+                if (!string.IsNullOrEmpty(accessToken) && 
+                    path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+                
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+// Configure authorization policies based on token claims
+builder.Services.AddAuthorization(options =>
+{
+    // Policy requiring a specific scope
+    // Scopes represent permissions the token has been granted
+    options.AddPolicy("ReadAccess", policy =>
+        policy.RequireClaim("scope", "read"));
+    
+    // Policy requiring multiple scopes (any of them)
+    options.AddPolicy("WriteAccess", policy =>
+        policy.RequireClaim("scope", "write", "admin"));
+    
+    // Policy requiring a specific role claim
+    options.AddPolicy("AdminOnly", policy =>
+        policy.RequireRole("Admin"));
+    
+    // Complex policy with multiple requirements
+    options.AddPolicy("ManagerAccess", policy =>
+        policy.RequireRole("Manager", "Admin")
+              .RequireClaim("department"));
+    
+    // Custom policy with code-based logic
+    options.AddPolicy("Over18", policy =>
+        policy.RequireAssertion(context =>
+        {
+            var birthDateClaim = context.User.FindFirst("birthdate")?.Value;
+            if (DateTime.TryParse(birthDateClaim, out var birthDate))
+            {
+                var age = DateTime.Today.Year - birthDate.Year;
+                if (birthDate > DateTime.Today.AddYears(-age)) age--;
+                return age >= 18;
+            }
+            return false;
+        }));
+});
+
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+// Important: Authentication middleware must come before authorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+app.Run();
+```
+
+**When to use JWT Bearer Authentication:**
+- You're building a REST API that will be consumed by multiple client types
+- You need stateless authentication that scales horizontally
+- Your clients can securely obtain and store access tokens
+- You want to support multiple authentication providers
+- You need to support mobile apps and single-page applications
+
+### 2. OpenID Connect Authentication
+
+OpenID Connect authentication is what you use when you want to implement "Sign in with..." functionality in your web applications. This is appropriate for traditional server-rendered web applications using technologies like Razor Pages or MVC, where you want to authenticate users and maintain their session using cookies.
+
+The OpenID Connect middleware handles the entire authentication flow automatically. When an unauthenticated user tries to access a protected resource, the middleware redirects them to the identity provider's login page. After successful authentication, the identity provider redirects back to your application with an authorization code, which the middleware automatically exchanges for tokens. These tokens are then used to establish a user session, typically stored in a cookie.
+
+```csharp
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(options =>
+{
+    // Use cookies to maintain the user's session after initial authentication
+    // This means users stay logged in as they navigate your application
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    
+    // Use OpenID Connect for the actual authentication challenge
+    // This redirects users to the identity provider's login page
+    options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+    
+    // Use OpenID Connect for sign-out as well
+    options.DefaultSignOutScheme = OpenIdConnectDefaults.AuthenticationScheme;
+})
+.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+{
+    // Cookie configuration for maintaining the user's session
+    options.Cookie.Name = "MyApp.AuthCookie";
+    
+    // Security settings for the authentication cookie
+    options.Cookie.HttpOnly = true; // Prevents JavaScript access for XSS protection
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Requires HTTPS
+    options.Cookie.SameSite = SameSiteMode.Lax; // CSRF protection
+    
+    // Session management settings
+    options.SlidingExpiration = true; // Extend session on activity
+    options.ExpireTimeSpan = TimeSpan.FromHours(8); // Session timeout
+    
+    // Where to redirect for login when authentication is required
+    options.LoginPath = "/Account/Login";
+    
+    // Where to redirect when access is denied
+    options.AccessDeniedPath = "/Account/AccessDenied";
+    
+    // Optional: Store tokens in the authentication cookie for later use
+    // Be cautious with this as it increases cookie size
+    // options.Cookie.MaxAge = TimeSpan.FromHours(8);
+})
+.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+{
+    // Your OpenID Connect provider configuration
+    // This is the identity provider that will authenticate your users
+    // Examples: Azure AD, Auth0, IdentityServer, Keycloak, Okta
+    options.Authority = "https://your-identity-provider.com";
+    
+    // Your application's client credentials registered with the provider
+    options.ClientId = "your-client-id";
+    options.ClientSecret = builder.Configuration["Authentication:ClientSecret"]; // Store in Key Vault or User Secrets
+    
+    // The OAuth 2.0 flow to use
+    // "code" indicates Authorization Code Flow, the most secure for web apps
+    options.ResponseType = OpenIdConnectResponseType.Code;
+    
+    // Alternative: Use hybrid flow for additional security
+    // options.ResponseType = OpenIdConnectResponseType.CodeIdToken;
+    
+    // Where the identity provider should redirect after authentication
+    // This must be registered with your identity provider
+    options.CallbackPath = "/signin-oidc";
+    
+    // Where the identity provider should redirect after sign-out
+    options.SignedOutCallbackPath = "/signout-callback-oidc";
+    options.SignedOutRedirectUri = "/";
+    
+    // Scopes define what information and access you're requesting
+    options.Scope.Clear(); // Clear default scopes first
+    options.Scope.Add("openid"); // Required - indicates this is an OIDC request
+    options.Scope.Add("profile"); // Request user profile information
+    options.Scope.Add("email"); // Request email address
+    options.Scope.Add("offline_access"); // Request refresh token
+    
+    // Add custom scopes for accessing your APIs
+    // options.Scope.Add("api://your-api-id/access");
+    
+    // Save the tokens received during authentication
+    // This allows you to access them later for calling APIs
+    options.SaveTokens = true;
+    
+    // Get additional user information from the UserInfo endpoint
+    // This makes an additional call to get more user details
+    options.GetClaimsFromUserInfoEndpoint = true;
+    
+    // Map claims from the identity provider to standard claim types
+    // This helps normalize claims across different providers
+    options.ClaimActions.MapJsonKey("role", "role");
+    options.ClaimActions.MapJsonKey("department", "department");
+    
+    // Remove claims you don't want to store in the cookie
+    // This helps keep the cookie size manageable
+    options.ClaimActions.DeleteClaim("sid");
+    options.ClaimActions.DeleteClaim("idp");
+    
+    // Token validation parameters
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = "https://your-identity-provider.com",
+        
+        // Specify which claim should be used for User.Identity.Name
+        NameClaimType = "name",
+        
+        // Specify which claim should be used for roles
+        RoleClaimType = "role",
+        
+        // Validate the token audience
+        ValidateAudience = true,
+        ValidAudience = "your-client-id"
+    };
+    
+    // Event handlers for customizing the authentication process
+    options.Events = new OpenIdConnectEvents
+    {
+        // Called after the ID token has been validated
+        OnTokenValidated = context =>
+        {
+            // This is a great place to load additional user data from your database
+            // and add it as claims to the user's identity
+            var email = context.Principal?.FindFirst("email")?.Value;
+            
+            // Example: Load user from your database
+            // var userService = context.HttpContext.RequestServices
+            //     .GetRequiredService<IUserService>();
+            // var user = await userService.GetUserByEmailAsync(email);
+            // 
+            // if (user != null)
+            // {
+            //     var claims = new List<Claim>
+            //     {
+            //         new Claim("internal_user_id", user.Id.ToString()),
+            //         new Claim("subscription_level", user.SubscriptionLevel)
+            //     };
+            //     
+            //     var appIdentity = new ClaimsIdentity(claims);
+            //     context.Principal.AddIdentity(appIdentity);
+            // }
+            
+            return Task.CompletedTask;
+        },
+        
+        // Called when authentication fails
+        OnAuthenticationFailed = context =>
+        {
+            // Handle authentication failures gracefully
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILogger<Program>>();
+            
+            logger.LogError(context.Exception, 
+                "OpenID Connect authentication failed");
+            
+            // Redirect to a friendly error page
+            context.HandleResponse();
+            context.Response.Redirect($"/Error?message={Uri.EscapeDataString(context.Exception.Message)}");
+            
+            return Task.CompletedTask;
+        },
+        
+        // Called before redirecting to the identity provider
+        OnRedirectToIdentityProvider = context =>
+        {
+            // Customize the authentication request
+            // Add additional parameters to the authorization request
+            
+            // Example: Specify UI culture/language
+            context.ProtocolMessage.SetParameter("ui_locales", "en-US");
+            
+            // Example: Force re-authentication
+            // context.ProtocolMessage.SetParameter("prompt", "login");
+            
+            // Example: Provide a login hint
+            // context.ProtocolMessage.SetParameter("login_hint", "user@example.com");
+            
+            // Example: Request specific authentication method
+            // context.ProtocolMessage.SetParameter("acr_values", "mfa");
+            
+            return Task.CompletedTask;
+        },
+        
+        // Called before redirecting to the identity provider for sign-out
+        OnRedirectToIdentityProviderForSignOut = context =>
+        {
+            // Customize the sign-out request
+            // You can add parameters to the logout request here
+            
+            return Task.CompletedTask;
+        },
+        
+        // Called when receiving the authorization code
+        OnAuthorizationCodeReceived = context =>
+        {
+            // You can intercept the code here if needed
+            // Typically used for advanced scenarios
+            
+            return Task.CompletedTask;
+        },
+        
+        // Called when tokens are received
+        OnTokenResponseReceived = context =>
+        {
+            // Access the tokens received from the token endpoint
+            // var accessToken = context.TokenEndpointResponse.AccessToken;
+            // var refreshToken = context.TokenEndpointResponse.RefreshToken;
+            
+            return Task.CompletedTask;
+        },
+        
+        // Called when receiving user information
+        OnUserInformationReceived = context =>
+        {
+            // Access the user information from the UserInfo endpoint
+            // var userInfo = context.User;
+            
+            return Task.CompletedTask;
+        },
+        
+        // Called when the remote sign-out is being processed
+        OnRemoteSignOut = context =>
+        {
+            // Handle sign-out initiated by the identity provider
+            // This is useful for single sign-out scenarios
+            
+            return Task.CompletedTask;
+        }
+    };
+});
+
+builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+// Order is critical: Authentication must come before Authorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+app.MapRazorPages();
+
+app.Run();
+```
+
+**When to use OpenID Connect Authentication:**
+- You're building a traditional web application with server-side rendering
+- You want to implement "Sign in with..." functionality
+- You need single sign-on across multiple applications
+- You want to centralize authentication with an identity provider
+- You need to maintain user sessions with cookies
+
+### 3. Cookie Authentication (Standalone)
+
+Cookie authentication is used when you're handling authentication entirely within your own application without an external identity provider. This is appropriate for applications that manage their own user accounts and credentials. Users typically log in with a username and password, and your application validates these credentials against your database.
+
+After successful authentication, the application creates an authentication ticket containing the user's claims and stores it in an encrypted cookie. This cookie is sent with subsequent requests, allowing the application to identify the user without requiring them to log in again for each request.
+
+```csharp
+using Microsoft.AspNetCore.Authentication.Cookies;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        // Cookie settings
+        options.Cookie.Name = "MyApp.Authentication";
+        options.Cookie.HttpOnly = true; // Prevent JavaScript access
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Require HTTPS
+        options.Cookie.SameSite = SameSiteMode.Strict; // Strict CSRF protection
+        
+        // Session management
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromDays(7); // How long users stay logged in
+        
+        // Login and access denied paths
+        options.LoginPath = "/Account/Login";
+        options.LogoutPath = "/Account/Logout";
+        options.AccessDeniedPath = "/Account/AccessDenied";
+        options.ReturnUrlParameter = "returnUrl";
+        
+        // Optional: Validate the authentication cookie on each request
+        // This allows you to check if the user is still active in your database
+        options.Events = new CookieAuthenticationEvents
+        {
+            OnValidatePrincipal = async context =>
+            {
+                // Get the user's identifier from the cookie
+                var userIdClaim = context.Principal?.FindFirst("user_id");
+                
+                if (userIdClaim != null)
+                {
+                    // Check if the user is still valid in your database
+                    // var userService = context.HttpContext.RequestServices
+                    //     .GetRequiredService<IUserService>();
+                    // var user = await userService.GetUserByIdAsync(userIdClaim.Value);
+                    
+                    // If user is no longer valid, reject the cookie
+                    // if (user == null || !user.IsActive)
+                    // {
+                    //     context.RejectPrincipal();
+                    //     await context.HttpContext.SignOutAsync(
+                    //         CookieAuthenticationDefaults.AuthenticationScheme);
+                    // }
+                }
+            },
+            
+            OnSigningIn = context =>
+            {
+                // Called when a user is signing in
+                // You can add additional claims here
+                return Task.CompletedTask;
+            },
+            
+            OnSignedIn = context =>
+            {
+                // Called after the user has signed in
+                // Good place for logging or analytics
+                return Task.CompletedTask;
+            },
+            
+            OnSigningOut = context =>
+            {
+                // Called when signing out
+                // Clean up any user-specific resources
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddControllersWithViews();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();
+```
+
+**When to use Cookie Authentication:**
+- You're managing your own user accounts and credentials
+- You're building a traditional web application without external identity providers
+- You need simple, straightforward authentication
+- You don't need to integrate with external APIs or services
+- You want full control over the authentication process
+
+### 4. Multiple Authentication Schemes
+
+In many real-world scenarios, you'll need to support multiple authentication methods simultaneously. For example, you might have a web application that uses OpenID Connect for user authentication, but also exposes APIs that need to accept JWT bearer tokens. ASP.NET Core makes this scenario straightforward by allowing you to configure multiple authentication schemes.
+
+```csharp
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(options =>
+{
+    // Default scheme for regular web pages (will use cookies)
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    
+    // Default challenge scheme for authentication (will use OIDC)
+    options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+})
+// Cookie authentication for maintaining sessions
+.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+{
+    options.Cookie.Name = "MyApp.Auth";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.SlidingExpiration = true;
+    options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    options.LoginPath = "/Account/Login";
+    options.AccessDeniedPath = "/Account/AccessDenied";
+})
+// OpenID Connect for user authentication
+.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+{
+    options.Authority = "https://your-identity-provider.com";
+    options.ClientId = "your-web-client-id";
+    options.ClientSecret = builder.Configuration["Authentication:ClientSecret"];
+    options.ResponseType = OpenIdConnectResponseType.Code;
+    options.SaveTokens = true;
+    options.GetClaimsFromUserInfoEndpoint = true;
+    
+    options.Scope.Clear();
+    options.Scope.Add("openid");
+    options.Scope.Add("profile");
+    options.Scope.Add("email");
+    
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        NameClaimType = "name",
+        RoleClaimType = "role"
+    };
+})
+// JWT Bearer for API authentication
+.AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+{
+    options.Authority = "https://your-identity-provider.com";
+    options.Audience = "your-api-identifier";
+    
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true
+    };
+    
+    // Important: This prevents JWT Bearer from interfering with cookie authentication
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            // Only try to authenticate if this is an API request
+            // You can identify API requests by path, Accept header, etc.
+            var path = context.HttpContext.Request.Path;
+            if (path.StartsWithSegments("/api"))
+            {
+                // Token will be extracted from Authorization header automatically
+                return Task.CompletedTask;
+            }
+            
+            // For non-API requests, skip JWT authentication
+            // This allows cookie authentication to handle these requests
+            context.NoResult();
+            return Task.CompletedTask;
+        }
+    };
+});
+
+// Configure different authorization policies
+builder.Services.AddAuthorization(options =>
+{
+    // Default policy for web pages (uses cookies)
+    options.DefaultPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme)
+        .Build();
+    
+    // Policy specifically for API endpoints (uses JWT)
+    options.AddPolicy("ApiPolicy", policy =>
+    {
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+              .RequireAuthenticatedUser()
+              .RequireClaim("scope", "api_access");
+    });
+    
+    // Policy that accepts either authentication method
+    options.AddPolicy("FlexibleAuth", policy =>
+    {
+        policy.AddAuthenticationSchemes(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            JwtBearerDefaults.AuthenticationScheme)
+              .RequireAuthenticatedUser();
+    });
+});
+
+builder.Services.AddControllersWithViews();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Map controllers with specific authentication requirements
+app.MapControllers(); // API endpoints
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}"); // Web pages
+
+app.Run();
+```
+
+**Example controller demonstrating scheme usage:**
+
+```csharp
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+// Web controller - uses cookie authentication by default
+public class HomeController : Controller
+{
+    [Authorize] // Uses default scheme (Cookies)
+    public IActionResult Index()
+    {
+        var userName = User.Identity?.Name;
+        return View();
+    }
+}
+
+// API controller - explicitly requires JWT authentication
+[ApiController]
+[Route("api/[controller]")]
+public class ProductsController : ControllerBase
+{
+    // This endpoint requires JWT Bearer authentication
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [HttpGet]
+    public IActionResult GetProducts()
+    {
+        var userId = User.FindFirst("sub")?.Value;
+        return Ok(new { message = "Products retrieved", userId });
+    }
+    
+    // This endpoint accepts either authentication method
+    [Authorize(Policy = "FlexibleAuth")]
+    [HttpGet("flexible")]
+    public IActionResult GetProductsFlexible()
+    {
+        var authType = User.Identity?.AuthenticationType;
+        return Ok(new { message = "Authenticated with: " + authType });
+    }
+}
+```
+
+**When to use Multiple Authentication Schemes:**
+- You have both a web UI and APIs in the same application
+- You need to support different client types (browsers and mobile apps)
+- You're migrating from one authentication method to another
+- You need to support multiple identity providers
+
+### 5. Windows Authentication
+
+Windows Authentication integrates with Windows domain accounts and is commonly used in corporate intranet applications. This method allows users to authenticate automatically using their Windows credentials without entering a username and password. It's particularly useful for line-of-business applications within organizations that use Active Directory.
+
+Windows Authentication works differently from other schemes because it relies on IIS or HTTP.sys to perform the actual authentication at the web server level. The authenticated Windows identity is then passed to your ASP.NET Core application.
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Enable Windows Authentication
+// Note: This requires configuration in launchSettings.json or IIS
+builder.Services.AddAuthentication(Microsoft.AspNetCore.Server.IISIntegration.IISDefaults.AuthenticationScheme);
+
+// You can combine Windows Authentication with other schemes
+builder.Services.AddAuthorization(options =>
+{
+    // Require authentication for all requests by default
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+    
+    // Policy requiring Windows Authentication and specific Windows group
+    options.AddPolicy("DomainAdmins", policy =>
+        policy.RequireRole(@"DOMAIN\Domain Admins"));
+    
+    // Policy requiring specific Windows users
+    options.AddPolicy("SpecificUsers", policy =>
+        policy.RequireUserName(@"DOMAIN\username"));
+});
+
+builder.Services.AddControllersWithViews();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();
+```
+
+**launchSettings.json configuration for Windows Authentication:**
+
+```json
+{
+  "iisSettings": {
+    "windowsAuthentication": true,
+    "anonymousAuthentication": false,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:5000",
+      "sslPort": 44300
+    }
+  },
+  "profiles": {
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
+```
+
+**When to use Windows Authentication:**
+- You're building intranet applications within a Windows domain
+- Users are already authenticated to the domain
+- You need seamless single sign-on in corporate environments
+- Security requirements mandate Windows domain integration
+
+### 6. Certificate Authentication
+
+Certificate authentication uses client certificates (X.509 certificates) to authenticate users or applications. This is a very secure authentication method often used in business-to-business scenarios, API authentication for high-security systems, and IoT device authentication.
+
+In certificate authentication, clients present a certificate during the TLS handshake. The server validates this certificate and uses it to establish the client's identity. This method provides strong authentication because it's based on public key cryptography and doesn't involve passwords that could be compromised.
+
+```csharp
+using Microsoft.AspNetCore.Authentication.Certificate;
+using System.Security.Cryptography.X509Certificates;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(
+    CertificateAuthenticationDefaults.AuthenticationScheme)
+    .AddCertificate(options =>
+    {
+        // How to validate the certificate
+        // AllowedCertificateTypes determines what certificate types are accepted
+        options.AllowedCertificateTypes = CertificateTypes.All; // Chained, SelfSigned, or All
+        
+        // Validation mode determines how strictly certificates are validated
+        // ChainTrust: Certificate must chain to a trusted root CA
+        // PeerTrust: Certificate must be directly trusted
+        // Custom: Use custom validation logic
+        options.RevocationMode = X509RevocationMode.Online; // Check certificate revocation
+        options.RevocationFlag = X509RevocationFlag.ExcludeRoot;
+        
+        // Event handlers for custom validation
+        options.Events = new CertificateAuthenticationEvents
+        {
+            OnCertificateValidated = context =>
+            {
+                // Custom validation logic
+                var certificate = context.ClientCertificate;
+                
+                // Example: Check certificate thumbprint against allowed list
+                var allowedThumbprints = new[]
+                {
+                    "CERT_THUMBPRINT_1",
+                    "CERT_THUMBPRINT_2"
+                };
+                
+                if (!allowedThumbprints.Contains(certificate.Thumbprint))
+                {
+                    context.Fail("Certificate thumbprint not allowed");
+                    return Task.CompletedTask;
+                }
+                
+                // Example: Check certificate subject
+                var subject = certificate.Subject;
+                if (!subject.Contains("CN=allowed-client"))
+                {
+                    context.Fail("Certificate subject not allowed");
+                    return Task.CompletedTask;
+                }
+                
+                // Example: Check certificate extensions or custom attributes
+                // Add custom claims based on certificate attributes
+                var claims = new[]
+                {
+                    new Claim(ClaimTypes.Name, certificate.Subject),
+                    new Claim("certificate_thumbprint", certificate.Thumbprint)
+                };
+                
+                var identity = new ClaimsIdentity(
+                    claims, 
+                    CertificateAuthenticationDefaults.AuthenticationScheme);
+                context.Principal = new ClaimsPrincipal(identity);
+                
+                context.Success();
+                return Task.CompletedTask;
+            },
+            
+            OnAuthenticationFailed = context =>
+            {
+                // Log authentication failures
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILogger<Program>>();
+                logger.LogWarning("Certificate authentication failed: {Error}", 
+                    context.Exception.Message);
+                
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+// Optional: Add certificate forwarding if behind a reverse proxy
+// This allows certificates to be forwarded from load balancers or reverse proxies
+builder.Services.AddCertificateForwarding(options =>
+{
+    // The header name where the certificate is forwarded
+    options.CertificateHeader = "X-ARR-ClientCert"; // Azure App Service
+    // options.CertificateHeader = "X-SSL-CERT"; // Nginx
+    
+    // Converter to transform the header value to a certificate
+    options.HeaderConverter = headerValue =>
+    {
+        if (string.IsNullOrWhiteSpace(headerValue))
+            return null;
+            
+        try
+        {
+            var bytes = Convert.FromBase64String(headerValue);
+            return new X509Certificate2(bytes);
+        }
+        catch
+        {
+            return null;
+        }
+    };
+});
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+// If using certificate forwarding
+app.UseCertificateForwarding();
+
+app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+app.Run();
+```
+
+**Kestrel configuration for certificate authentication (appsettings.json):**
+
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://localhost:5001",
+        "Certificate": {
+          "Path": "server-certificate.pfx",
+          "Password": "certificate-password"
+        },
+        "ClientCertificateMode": "RequireCertificate"
+      }
+    }
+  }
+}
+```
+
+**When to use Certificate Authentication:**
+- You need very high security authentication
+- You're building B2B APIs where partners have certificates
+- You're authenticating IoT devices or services
+- Password-based authentication is not acceptable
+- You need mutual TLS (mTLS) authentication
+
+### 7. Azure AD (Microsoft Identity Platform)
+
+Microsoft Identity Platform (formerly Azure AD) is a comprehensive identity solution that supports both OAuth 2.0 and OpenID Connect. It provides enterprise-grade authentication and is particularly useful for applications targeting Microsoft 365 users, Azure customers, or organizations using Azure Active Directory.
+
+The Microsoft.Identity.Web library simplifies the integration significantly and provides helpers for common scenarios like calling Microsoft Graph API or your own protected APIs.
+
+```csharp
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Identity.Web;
+using Microsoft.Identity.Web.UI;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Microsoft Identity Web authentication
+// This configures both OpenID Connect and cookie authentication
+builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
+    .AddMicrosoftIdentityWebApp(options =>
+    {
+        // Configuration is typically read from appsettings.json
+        builder.Configuration.Bind("AzureAd", options);
+        
+        // Customize OpenID Connect options if needed
+        options.Events = new OpenIdConnectEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                // Add custom claims or load user data
+                var email = context.Principal?.FindFirst("preferred_username")?.Value;
+                // Load additional user data from your database
+                
+                await Task.CompletedTask;
+            }
+        };
+    });
+
+// If you need to call Microsoft Graph API
+builder.Services.AddMicrosoftGraph(options =>
+{
+    options.Scopes = "user.read"; // Add required Microsoft Graph scopes
+});
+
+// If you need to call your own APIs protected by Azure AD
+builder.Services.AddDownstreamWebApi("MyApi", options =>
+{
+    builder.Configuration.Bind("MyApi", options);
+});
+
+// Add authorization
+builder.Services.AddAuthorization(options =>
+{
+    // Policy requiring specific Azure AD role
+    options.AddPolicy("AdminUsers", policy =>
+        policy.RequireRole("Admin"));
+    
+    // Policy requiring specific Azure AD group membership
+    options.AddPolicy("HRDepartment", policy =>
+        policy.RequireClaim("groups", "hr-group-object-id"));
+});
+
+builder.Services.AddControllersWithViews()
+    .AddMicrosoftIdentityUI(); // Adds account management UI
+
+builder.Services.AddRazorPages();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+app.MapRazorPages();
+
+app.Run();
+```
+
+**appsettings.json configuration for Azure AD:**
+
+```json
+{
+  "AzureAd": {
+    "Instance": "https://login.microsoftonline.com/",
+    "Domain": "your-tenant.onmicrosoft.com",
+    "TenantId": "your-tenant-id",
+    "ClientId": "your-client-id",
+    "ClientSecret": "your-client-secret",
+    "CallbackPath": "/signin-oidc",
+    "SignedOutCallbackPath": "/signout-oidc"
+  },
+  "MyApi": {
+    "BaseUrl": "https://your-api.azurewebsites.net",
+    "Scopes": "api://your-api-id/.default"
+  }
+}
+```
+
+**Controller example using Microsoft Graph:**
+
+```csharp
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Graph;
+using Microsoft.Identity.Web;
+
+[Authorize]
+public class ProfileController : Controller
+{
+    private readonly GraphServiceClient _graphClient;
+    private readonly ITokenAcquisition _tokenAcquisition;
+
+    public ProfileController(
+        GraphServiceClient graphClient,
+        ITokenAcquisition tokenAcquisition)
+    {
+        _graphClient = graphClient;
+        _tokenAcquisition = tokenAcquisition;
+    }
+
+    public async Task<IActionResult> Index()
+    {
+        // Call Microsoft Graph API to get user profile
+        var user = await _graphClient.Me.Request().GetAsync();
+        
+        // Get user's photo
+        try
+        {
+            var photoStream = await _graphClient.Me.Photo.Content.Request().GetAsync();
+            // Process photo stream
+        }
+        catch (ServiceException)
+        {
+            // User has no photo
+        }
+        
+        return View(user);
+    }
+    
+    // Example: Call your own protected API
+    [AuthorizeForScopes(Scopes = new[] { "api://your-api-id/.default" })]
+    public async Task<IActionResult> CallApi()
+    {
+        // Token acquisition is handled automatically by the AuthorizeForScopes attribute
+        // The token is added to the HTTP context
+        
+        return View();
+    }
+}
+```
+
+**When to use Azure AD Authentication:**
+- You're building applications for Microsoft 365 users
+- You need enterprise features like multi-factor authentication and conditional access
+- You want to leverage existing Azure AD user base
+- You need to call Microsoft Graph or other Microsoft APIs
+- You need advanced security features and compliance
+
+### 8. Social Login Providers (Google, Facebook, Twitter, etc.)
+
+ASP.NET Core provides built-in support for popular social login providers. This allows users to authenticate using their existing accounts from services like Google, Facebook, Twitter, Microsoft, GitHub, and others. This approach reduces friction for users since they don't need to create new accounts.
+
+```csharp
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Authentication.Facebook;
+using Microsoft.AspNetCore.Authentication.Twitter;
+using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(options =>
+{
+    // Use cookies to maintain the authenticated session
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    
+    // No default challenge scheme - users choose which provider to use
+})
+.AddCookie(options =>
+{
+    options.LoginPath = "/Account/Login";
+    options.AccessDeniedPath = "/Account/AccessDenied";
+    options.SlidingExpiration = true;
+    options.ExpireTimeSpan = TimeSpan.FromDays(30);
+})
+// Add Google authentication
+.AddGoogle(GoogleDefaults.AuthenticationScheme, options =>
+{
+    options.ClientId = builder.Configuration["Authentication:Google:ClientId"]!;
+    options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]!;
+    
+    // Request additional scopes (permissions)
+    options.Scope.Add("profile");
+    options.Scope.Add("email");
+    
+    // Save tokens for calling Google APIs
+    options.SaveTokens = true;
+    
+    // Map Google claims to standard claims
+    options.ClaimActions.MapJsonKey("urn:google:profile", "link");
+    options.ClaimActions.MapJsonKey("urn:google:picture", "picture");
+    
+    // Handle authentication events
+    options.Events.OnCreatingTicket = context =>
+    {
+        // Access to user information from Google
+        var picture = context.User.GetProperty("picture").GetString();
+        // You can store this in your database or add it as a claim
+        
+        return Task.CompletedTask;
+    };
+})
+// Add Facebook authentication
+.AddFacebook(options =>
+{
+    options.AppId = builder.Configuration["Authentication:Facebook:AppId"]!;
+    options.AppSecret = builder.Configuration["Authentication:Facebook:AppSecret"]!;
+    
+    // Request additional fields from Facebook
+    options.Fields.Add("name");
+    options.Fields.Add("email");
+    options.Fields.Add("picture");
+    
+    options.SaveTokens = true;
+})
+// Add Twitter authentication
+.AddTwitter(options =>
+{
+    options.ConsumerKey = builder.Configuration["Authentication:Twitter:ConsumerKey"]!;
+    options.ConsumerSecret = builder.Configuration["Authentication:Twitter:ConsumerSecret"]!;
+    
+    // Twitter v2 API settings
+    options.RetrieveUserDetails = true;
+})
+// Add Microsoft Account authentication
+.AddMicrosoftAccount(options =>
+{
+    options.ClientId = builder.Configuration["Authentication:Microsoft:ClientId"]!;
+    options.ClientSecret = builder.Configuration["Authentication:Microsoft:ClientSecret"]!;
+    
+    options.SaveTokens = true;
+})
+// Add GitHub authentication (requires Microsoft.AspNetCore.Authentication.GitHub package)
+.AddGitHub(options =>
+{
+    options.ClientId = builder.Configuration["Authentication:GitHub:ClientId"]!;
+    options.ClientSecret = builder.Configuration["Authentication:GitHub:ClientSecret"]!;
+    
+    options.Scope.Add("user:email");
+    options.SaveTokens = true;
+});
+
+builder.Services.AddControllersWithViews();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();
+```
+
+**Account controller for social logins:**
+
+```csharp
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+
+public class AccountController : Controller
+{
+    private readonly ILogger<AccountController> _logger;
+
+    public AccountController(ILogger<AccountController> logger)
+    {
+        _logger = logger;
+    }
+
+    [HttpGet]
+    public IActionResult Login(string returnUrl = "/")
+    {
+        ViewData["ReturnUrl"] = returnUrl;
+        return View();
+    }
+
+    [HttpPost]
+    public IActionResult ExternalLogin(string provider, string returnUrl = "/")
+    {
+        // Redirect to the external provider for authentication
+        var redirectUrl = Url.Action(nameof(ExternalLoginCallback), 
+            new { returnUrl });
+        
+        var properties = new AuthenticationProperties 
+        { 
+            RedirectUri = redirectUrl,
+            Items = { { "scheme", provider } }
+        };
+        
+        return Challenge(properties, provider);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExternalLoginCallback(
+        string returnUrl = "/", 
+        string? remoteError = null)
+    {
+        if (remoteError != null)
+        {
+            _logger.LogError("Error from external provider: {Error}", remoteError);
+            return RedirectToAction(nameof(Login));
+        }
+
+        // Get information about the user from the external provider
+        var result = await HttpContext.AuthenticateAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme);
+
+        if (!result.Succeeded)
+        {
+            return RedirectToAction(nameof(Login));
+        }
+
+        // Extract user information from external login
+        var externalUser = result.Principal;
+        var claims = externalUser?.Claims.ToList();
+        
+        // Get standard claims
+        var userId = externalUser?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var email = externalUser?.FindFirst(ClaimTypes.Email)?.Value;
+        var name = externalUser?.FindFirst(ClaimTypes.Name)?.Value;
+        var provider = externalUser?.Identity?.AuthenticationType;
+
+        // Here you would typically:
+        // 1. Check if user exists in your database (by provider + provider userId)
+        // 2. If new user, create account in your database
+        // 3. If existing user, update last login time
+        // 4. Add any additional claims from your database
+        
+        // Example: Create or update user in your database
+        // var userService = HttpContext.RequestServices.GetRequiredService<IUserService>();
+        // var localUser = await userService.FindOrCreateExternalUserAsync(
+        //     provider, userId, email, name);
+        
+        // Create your application's claims
+        var appClaims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, userId ?? string.Empty),
+            new Claim(ClaimTypes.Name, name ?? email ?? "User"),
+            new Claim(ClaimTypes.Email, email ?? string.Empty),
+            new Claim("external_provider", provider ?? string.Empty),
+            // Add claims from your database
+            // new Claim("subscription_level", localUser.SubscriptionLevel),
+            // new Claim(ClaimTypes.Role, localUser.Role)
+        };
+
+        var identity = new ClaimsIdentity(
+            appClaims, 
+            CookieAuthenticationDefaults.AuthenticationScheme);
+        
+        var principal = new ClaimsPrincipal(identity);
+
+        // Sign in with your application's cookie
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme, 
+            principal,
+            new AuthenticationProperties
+            {
+                IsPersistent = true, // Remember me
+                ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30)
+            });
+
+        return LocalRedirect(returnUrl);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Logout()
+    {
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return RedirectToAction("Index", "Home");
+    }
+}
+```
+
+**Login view with social login buttons:**
+
+```html
+@{
+    ViewData["Title"] = "Login";
+    var returnUrl = ViewData["ReturnUrl"] as string ?? "/";
+}
+
+<h2>Log in</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <section>
+            <h4>Use a social account to log in</h4>
+            <hr />
+            <form asp-controller="Account" asp-action="ExternalLogin" 
+                  asp-route-returnUrl="@returnUrl" method="post">
+                <div>
+                    <button type="submit" class="btn btn-primary" 
+                            name="provider" value="Google">
+                        <i class="fab fa-google"></i> Sign in with Google
+                    </button>
+                </div>
+                <div class="mt-2">
+                    <button type="submit" class="btn btn-primary" 
+                            name="provider" value="Facebook">
+                        <i class="fab fa-facebook"></i> Sign in with Facebook
+                    </button>
+                </div>
+                <div class="mt-2">
+                    <button type="submit" class="btn btn-dark" 
+                            name="provider" value="GitHub">
+                        <i class="fab fa-github"></i> Sign in with GitHub
+                    </button>
+                </div>
+                <div class="mt-2">
+                    <button type="submit" class="btn btn-info" 
+                            name="provider" value="Microsoft">
+                        <i class="fab fa-microsoft"></i> Sign in with Microsoft
+                    </button>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+```
+
+**When to use Social Login Providers:**
+- You want to reduce friction for user registration
+- You're building consumer-facing applications
+- You want to avoid managing passwords
+- You need quick user onboarding
+- Your target audience already uses these services
+
+---
+
+## Real-World Implementation Scenarios
+
+Let's explore some common scenarios and how you would implement authentication for each one.
+
+### Scenario 1: Public REST API with JWT Tokens
+
+You're building a public REST API that will be consumed by mobile apps, single-page applications, and third-party services. Users need to authenticate and receive a JWT token they can use for subsequent API calls.
+
+**Recommended approach:** JWT Bearer Authentication + Custom token endpoint
+
+You would implement JWT Bearer authentication as shown earlier, but you'd also need to create an endpoint where users can exchange their credentials (or an authorization code) for a JWT token. You might use a library like IdentityServer or implement your own token endpoint.
+
+### Scenario 2: Traditional Web Application with User Database
+
+You're building a traditional web application with server-side rendering (Razor Pages or MVC) where users register with email and password. You manage your own user database.
+
+**Recommended approach:** ASP.NET Core Identity + Cookie Authentication
+
+ASP.NET Core Identity provides a complete user management system including registration, login, password hashing, email confirmation, two-factor authentication, and more. It works seamlessly with cookie authentication.
+
+### Scenario 3: Enterprise Intranet Application
+
+You're building an internal application for a company that uses Azure Active Directory. Users should automatically sign in using their corporate credentials.
+
+**Recommended approach:** Azure AD Authentication with Microsoft Identity Platform
+
+This provides seamless single sign-on for users, leverages existing corporate identities, and supports advanced features like conditional access and multi-factor authentication policies managed by IT.
+
+### Scenario 4: SPA with Backend API
+
+You're building a React/Angular/Vue application that calls a separate ASP.NET Core API. Both are under your control.
+
+**Recommended approach:** OpenID Connect (for SPA) + JWT Bearer (for API)
+
+The SPA uses the Authorization Code Flow with PKCE to authenticate users and obtain tokens. These tokens are then sent to the API, which validates them using JWT Bearer authentication. You could use a service like Auth0, Azure AD B2C, or IdentityServer as the identity provider.
+
+### Scenario 5: Multi-Tenant SaaS Application
+
+You're building a SaaS application where each customer (tenant) has their own users, and some customers want to use their own identity provider.
+
+**Recommended approach:** Azure AD B2C or Multi-tenant OpenID Connect setup
+
+Azure AD B2C supports custom policies for tenant isolation and can integrate with external identity providers. Alternatively, you could configure multiple OpenID Connect schemes, one per tenant, allowing each customer to use their preferred identity system.
+
+---
+
+## Security Best Practices
+
+Regardless of which authentication method you choose, following security best practices is crucial for protecting your users and your application.
+
+### Token Storage
+
+**For Web Applications:**
+Store tokens securely on the server side, typically in encrypted session cookies. Never store sensitive tokens in localStorage or sessionStorage in the browser as they're vulnerable to XSS attacks. If you must store tokens in the browser, use the `httpOnly` and `secure` flags for cookies.
+
+**For Mobile Applications:**
+Use the platform's secure storage mechanisms like Keychain (iOS) or KeyStore (Android). Never store tokens in plain text or in shared preferences without encryption.
+
+**For SPAs:**
+The Authorization Code Flow with PKCE is now the recommended approach. Store access tokens in memory only. Use refresh tokens stored in httpOnly cookies for obtaining new access tokens.
+
+### Token Lifetime
+
+Keep access token lifetimes short (5-15 minutes) to limit the window of opportunity if a token is compromised. Use refresh tokens to obtain new access tokens without requiring the user to log in again. Refresh tokens should have longer lifetimes but must be stored securely and can be revoked.
+
+### HTTPS Everywhere
+
+Always use HTTPS in production. This prevents tokens and credentials from being intercepted in transit. Configure your application to redirect HTTP requests to HTTPS and use HSTS (HTTP Strict Transport Security) headers.
+
+### Protection Against Common Attacks
+
+**Cross-Site Request Forgery (CSRF):**
+Use anti-forgery tokens for state-changing operations. ASP.NET Core provides built-in CSRF protection through the `[ValidateAntiForgeryToken]` attribute and tag helpers.
+
+**Cross-Site Scripting (XSS):**
+Always encode output, use Content Security Policy headers, and avoid storing sensitive data in the browser's localStorage. ASP.NET Core's Razor templates automatically encode output by default.
+
+**SQL Injection:**
+Use parameterized queries and ORMs like Entity Framework Core. Never concatenate user input into SQL queries.
+
+### Logging and Monitoring
+
+Log authentication events including successful logins, failed login attempts, password changes, and access to sensitive resources. Monitor for suspicious patterns like multiple failed login attempts from the same IP address, which might indicate a brute force attack.
+
+However, never log sensitive information like passwords, tokens, or personal identifiable information (PII) that could be exploited if logs are compromised.
+
+### Regular Security Updates
+
+Keep your authentication libraries and dependencies up to date. Security vulnerabilities are regularly discovered and patched. Subscribe to security advisories for the libraries you use.
+
+---
+
+## Conclusion
+
+Understanding OAuth 2.0 and OpenID Connect is fundamental to building secure modern applications. OAuth 2.0 provides the authorization framework for delegated access, while OpenID Connect extends it to provide authentication and identity information.
+
+ASP.NET Core provides excellent support for various authentication methods, from simple cookie-based authentication for traditional web apps to sophisticated OpenID Connect flows for enterprise scenarios. The key is choosing the right authentication method for your specific scenario, implementing it correctly, and following security best practices.
+
+Remember that authentication is just one part of application security. Authorization (determining what authenticated users can do), secure coding practices, and regular security audits are all equally important for building truly secure applications.
+
+For most modern applications, you'll likely use a combination of authentication methods: OpenID Connect or Azure AD for web application user authentication, JWT Bearer for API protection, and possibly additional methods like certificate authentication for service-to-service communication. ASP.NET Core's flexible authentication system makes it straightforward to configure and combine multiple authentication schemes to meet your application's needs.
