@@ -156,7 +156,7 @@ Now let's explore the various authentication methods you can configure in ASP.NE
 
 JWT Bearer authentication is the most common approach for protecting APIs in modern applications. When you build a Web API that will be called by front-end applications, mobile apps, or other services, JWT Bearer authentication provides a stateless way to verify the caller's identity and permissions.
 
-In this approach, clients send an access token in the Authorization header of their HTTP requests using the format "Bearer {token}". Your API validates this token by checking its signature, expiration time, issuer, and audience claims. The beauty of JWT Bearer authentication is that it's stateless—your API doesn't need to store any session information or make database calls to validate each request. All the information needed for validation is contained within the token itself or can be retrieved from the authorization server's public keys.
+In this approach, clients send an access token in the Authorization header of their HTTP requests using the format `"Bearer {'{token}'}"`. Your API validates this token by checking its signature, expiration time, issuer, and audience claims. The beauty of JWT Bearer authentication is that it's stateless—your API doesn't need to store any session information or make database calls to validate each request. All the information needed for validation is contained within the token itself or can be retrieved from the authorization server's public keys.
 
 ```csharp
 using Microsoft.AspNetCore.Authentication.JwtBearer;
