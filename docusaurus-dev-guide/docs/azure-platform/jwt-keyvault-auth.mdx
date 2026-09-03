@@ -4,15 +4,527 @@ sidebar_label: "JWT + Key Vault Auth"
 sidebar_position: 3
 tags: [azure, jwt, keyvault, authentication, security]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Verify if it is accurate"/>
 
 # JWT Authentication with Azure Key Vault
 
 An interactive guide covering JWT authentication integrated with Azure Key Vault for secure key management.
 
-<iframe
-  src="https://claude.site/public/artifacts/1764cd1d-7de2-464d-9f4a-b9e6ee3ece57/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="JWT Authentication with Azure Key Vault"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# JWT Authentication with Azure Key Vault - Implementation Guide
+
+This guide walks you through implementing secure JWT authentication in ASP.NET Core using Azure Key Vault. We'll focus on the RSA approach as the primary method, with a simpler symmetric key alternative provided at the end.
+
+## Primary Approach: RSA Keys in Azure Key Vault
+
+This approach uses asymmetric cryptography where Azure Key Vault generates and stores an RSA key pair. The private key never leaves Key Vault's hardware security module, while the public key is used locally to validate tokens. This provides enterprise-grade security suitable for production environments.
+
+### Step 1: Create an RSA Key in Azure Key Vault
+
+Navigate to your Azure Key Vault in the portal and go to the Keys section. Click on Generate or Create and configure the key with these settings. Name your key something descriptive like "jwt-signing-key". Select RSA as the key type and choose a key size of 2048 bits for good security and performance, or 4096 bits if you need maximum security. Under permitted operations, enable Sign and optionally Verify. Leave other operations disabled following the principle of least privilege.
+
+If you prefer using the Azure CLI for automation, you can create the key with this command:
+
+```bash
+az keyvault key create \
+  --vault-name your-keyvault-name \
+  --name jwt-signing-key \
+  --kty RSA \
+  --size 2048 \
+  --ops sign verify
+```
+
+### Step 2: Enable Managed Identity
+
+Your application needs permission to access the Key Vault. Go to your Azure App Service in the portal and find the Identity section in the left menu. Under System assigned, toggle the status to On and save the changes. Azure will create a managed identity for your application and show you an Object ID, which is your application's unique identifier in Azure Active Directory.
+
+### Step 3: Grant Key Vault Permissions
+
+Go back to your Key Vault and navigate to Access control (IAM). Click Add role assignment and select the Key Vault Crypto User role, which allows your application to use keys for cryptographic operations. Search for your App Service by name and add it as a member. This grants your application permission to retrieve the key and perform signing operations.
+
+### Step 4: Install Required NuGet Packages
+
+Your ASP.NET Core project needs several packages to work with Key Vault and JWT authentication. Install these packages using the .NET CLI:
+
+```bash
+dotnet add package Azure.Identity
+dotnet add package Azure.Security.KeyVault.Keys
+dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+dotnet add package Microsoft.IdentityModel.Tokens
+dotnet add package System.IdentityModel.Tokens.Jwt
+```
+
+### Step 5: Create the JWT Settings Class
+
+Create a class that represents your JWT configuration. This class will be populated from your application settings and Key Vault secrets during startup:
+
+```csharp
+public class JwtSettings
+{
+    public string KeyVaultUrl { get; set; }
+    public string SigningKeyName { get; set; }
+    public string Issuer { get; set; }
+    public string Audience { get; set; }
+    public int ExpirationMinutes { get; set; } = 60;
+}
+```
+
+### Step 6: Configure Application Settings
+
+Add these settings to your appsettings.json file. Notice that these are not secrets and can safely be committed to source control:
+
+```json
+{
+  "KeyVaultUrl": "https://your-keyvault.vault.azure.net/",
+  "Jwt": {
+    "KeyVaultUrl": "https://your-keyvault.vault.azure.net/",
+    "SigningKeyName": "jwt-signing-key",
+    "Issuer": "https://api.yourcompany.com",
+    "Audience": "https://api.yourcompany.com",
+    "ExpirationMinutes": 60
+  }
+}
+```
+
+### Step 7: Configure Services in Program.cs
+
+In your Program.cs file, set up authentication using the RSA key from Key Vault. This configuration loads the public key during startup for token validation:
+
+```csharp
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Azure.Identity;
+using Azure.Security.KeyVault.Keys;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Key Vault as a configuration source
+var keyVaultUrl = builder.Configuration["KeyVaultUrl"];
+builder.Configuration.AddAzureKeyVault(
+    new Uri(keyVaultUrl),
+    new DefaultAzureCredential());
+
+// Bind JWT settings
+var jwtSettings = new JwtSettings();
+builder.Configuration.GetSection("Jwt").Bind(jwtSettings);
+builder.Services.Configure<JwtSettings>(
+    builder.Configuration.GetSection("Jwt"));
+
+// Create KeyClient for retrieving the RSA key
+var keyClient = new KeyClient(
+    new Uri(jwtSettings.KeyVaultUrl), 
+    new DefaultAzureCredential());
+
+// Retrieve the RSA key and extract the public key
+var keyVaultKey = await keyClient.GetKeyAsync(jwtSettings.SigningKeyName);
+var rsaPublicKey = keyVaultKey.Value.Key.ToRSA();
+var rsaSecurityKey = new RsaSecurityKey(rsaPublicKey);
+
+// Register KeyClient for token signing
+builder.Services.AddSingleton(keyClient);
+
+// Configure JWT authentication
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = rsaSecurityKey,
+        ValidateIssuer = true,
+        ValidIssuer = jwtSettings.Issuer,
+        ValidateAudience = true,
+        ValidAudience = jwtSettings.Audience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(5)
+    };
+});
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+```
+
+### Step 8: Create the Token Service
+
+Build a service that generates JWT tokens by signing them with the RSA private key in Key Vault. The actual signing operation happens inside Key Vault's hardware security module:
+
+```csharp
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using Azure.Security.KeyVault.Keys;
+using Azure.Security.KeyVault.Keys.Cryptography;
+using System.Text;
+
+public interface ITokenService
+{
+    Task<string> GenerateTokenAsync(string userId, string username, IEnumerable<string> roles);
+}
+
+public class TokenService : ITokenService
+{
+    private readonly JwtSettings _jwtSettings;
+    private readonly KeyClient _keyClient;
+    private readonly ILogger<TokenService> _logger;
+
+    public TokenService(
+        IOptions<JwtSettings> jwtSettings,
+        KeyClient keyClient,
+        ILogger<TokenService> logger)
+    {
+        _jwtSettings = jwtSettings.Value;
+        _keyClient = keyClient;
+        _logger = logger;
+    }
+
+    public async Task<string> GenerateTokenAsync(
+        string userId, 
+        string username, 
+        IEnumerable<string> roles)
+    {
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(ClaimTypes.Name, username),
+            new Claim(JwtRegisteredClaimNames.Iat, 
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString())
+        };
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        var expiration = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpirationMinutes);
+
+        // Get the RSA key from Key Vault
+        var keyVaultKey = await _keyClient.GetKeyAsync(_jwtSettings.SigningKeyName);
+        var cryptoClient = new CryptographyClient(
+            keyVaultKey.Value.Id, 
+            new DefaultAzureCredential());
+        
+        var rsaKey = keyVaultKey.Value.Key.ToRSA();
+        var securityKey = new RsaSecurityKey(rsaKey);
+
+        // Create JWT header and payload
+        var header = new JwtHeader(new SigningCredentials(
+            securityKey, 
+            SecurityAlgorithms.RsaSha256));
+
+        var payload = new JwtPayload(
+            issuer: _jwtSettings.Issuer,
+            audience: _jwtSettings.Audience,
+            claims: claims,
+            notBefore: DateTime.UtcNow,
+            expires: expiration);
+
+        var token = new JwtSecurityToken(header, payload);
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var unsignedToken = tokenHandler.WriteToken(token);
+        
+        // Extract the part to sign
+        var parts = unsignedToken.Split('.');
+        var headerAndPayload = $"{parts[0]}.{parts[1]}";
+        var dataToSign = Encoding.UTF8.GetBytes(headerAndPayload);
+
+        // Sign using Key Vault (private key never leaves the HSM)
+        var signResult = await cryptoClient.SignDataAsync(
+            SignatureAlgorithm.RS256, 
+            dataToSign);
+
+        var signature = Base64UrlEncoder.Encode(signResult.Signature);
+        var signedToken = $"{headerAndPayload}.{signature}";
+
+        _logger.LogInformation(
+            "Generated RSA-signed JWT token for user {UserId}", userId);
+
+        return signedToken;
+    }
+}
+```
+
+Register this service in Program.cs:
+
+```csharp
+builder.Services.AddScoped<ITokenService, TokenService>();
+```
+
+### Step 9: Create the Authentication Controller
+
+Build a controller that handles login and issues JWT tokens. This controller validates user credentials and returns a signed token:
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using System.ComponentModel.DataAnnotations;
+
+[ApiController]
+[Route("api/[controller]")]
+public class AuthController : ControllerBase
+{
+    private readonly ITokenService _tokenService;
+    private readonly ILogger<AuthController> _logger;
+
+    public AuthController(
+        ITokenService tokenService,
+        ILogger<AuthController> logger)
+    {
+        _tokenService = tokenService;
+        _logger = logger;
+    }
+
+    [HttpPost("login")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        // Validate credentials against your user store
+        var isValidUser = await ValidateUserCredentials(
+            request.Username, 
+            request.Password);
+        
+        if (!isValidUser)
+        {
+            _logger.LogWarning(
+                "Failed login attempt for username: {Username}", 
+                request.Username);
+            return Unauthorized(new { message = "Invalid credentials" });
+        }
+
+        // Retrieve user information for the token
+        var userId = "user-123";
+        var username = request.Username;
+        var roles = new[] { "User" };
+
+        var token = await _tokenService.GenerateTokenAsync(
+            userId, username, roles);
+
+        _logger.LogInformation(
+            "User {Username} logged in successfully", username);
+
+        return Ok(new LoginResponse
+        {
+            Token = token,
+            Username = username,
+            ExpiresIn = 3600
+        });
+    }
+
+    private async Task<bool> ValidateUserCredentials(
+        string username, string password)
+    {
+        // Replace with real credential validation
+        await Task.Delay(100);
+        return username == "demo" && password == "password123";
+    }
+}
+
+public class LoginRequest
+{
+    [Required]
+    public string Username { get; set; }
+    
+    [Required]
+    public string Password { get; set; }
+}
+
+public class LoginResponse
+{
+    public string Token { get; set; }
+    public string Username { get; set; }
+    public int ExpiresIn { get; set; }
+}
+```
+
+### Step 10: Protect Your API Endpoints
+
+Use the Authorize attribute to protect your endpoints. The authentication middleware automatically validates JWT tokens using the public key cached during startup:
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class ProductsController : ControllerBase
+{
+    [HttpGet]
+    [Authorize]
+    public IActionResult GetProducts()
+    {
+        var username = User.Identity?.Name;
+        return Ok(new[] { new { id = 1, name = "Product 1" } });
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    public IActionResult CreateProduct([FromBody] ProductRequest request)
+    {
+        return Ok(new { id = 2, name = request.Name });
+    }
+
+    [HttpGet("public")]
+    [AllowAnonymous]
+    public IActionResult GetPublicProducts()
+    {
+        return Ok(new[] { new { id = 1, name = "Public Product" } });
+    }
+}
+```
+
+## Alternative Approach: Symmetric Key
+
+If you need a simpler implementation or don't require the advanced security features of RSA keys, you can use a symmetric signing key stored as a secret in Key Vault. This approach uses the same secret for both signing and validating tokens.
+
+### Creating the Secret
+
+In Azure Key Vault, go to Secrets and create a new secret named "JwtSigningKey". Generate a strong random string of at least 64 characters. You can use PowerShell to generate one:
+
+```powershell
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 64 | ForEach-Object {[char]$_})
+```
+
+### Updated Settings Class
+
+```csharp
+public class JwtSettings
+{
+    public string SigningKey { get; set; }
+    public string Issuer { get; set; }
+    public string Audience { get; set; }
+    public int ExpirationMinutes { get; set; } = 60;
+}
+```
+
+### Key Vault Configuration
+
+In Key Vault, create secrets with double-hyphen notation:
+
+- Jwt--SigningKey (your generated secret)
+- Jwt--Issuer (your API URL)
+- Jwt--Audience (your API URL)
+
+### Simplified Program.cs Configuration
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var keyVaultUrl = builder.Configuration["KeyVaultUrl"];
+builder.Configuration.AddAzureKeyVault(
+    new Uri(keyVaultUrl),
+    new DefaultAzureCredential());
+
+var jwtSettings = new JwtSettings();
+builder.Configuration.GetSection("Jwt").Bind(jwtSettings);
+builder.Services.Configure<JwtSettings>(
+    builder.Configuration.GetSection("Jwt"));
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(jwtSettings.SigningKey)),
+        ValidateIssuer = true,
+        ValidIssuer = jwtSettings.Issuer,
+        ValidateAudience = true,
+        ValidAudience = jwtSettings.Audience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(5)
+    };
+});
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+```
+
+### Simplified Token Service
+
+```csharp
+public class TokenService : ITokenService
+{
+    private readonly JwtSettings _jwtSettings;
+    private readonly ILogger<TokenService> _logger;
+
+    public TokenService(
+        IOptions<JwtSettings> jwtSettings,
+        ILogger<TokenService> logger)
+    {
+        _jwtSettings = jwtSettings.Value;
+        _logger = logger;
+    }
+
+    public string GenerateToken(
+        string userId, 
+        string username, 
+        IEnumerable<string> roles)
+    {
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(ClaimTypes.Name, username)
+        };
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        var key = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(_jwtSettings.SigningKey));
+        
+        var credentials = new SigningCredentials(
+            key, 
+            SecurityAlgorithms.HmacSha256);
+
+        var expiration = DateTime.UtcNow.AddMinutes(
+            _jwtSettings.ExpirationMinutes);
+
+        var token = new JwtSecurityToken(
+            issuer: _jwtSettings.Issuer,
+            audience: _jwtSettings.Audience,
+            claims: claims,
+            expires: expiration,
+            signingCredentials: credentials
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+```
+
+The authentication controller and protected endpoints remain identical for both approaches.
+
+## Key Differences Between Approaches
+
+The RSA approach provides stronger security because the private key never leaves Azure Key Vault's hardware security module. It supports scenarios where multiple services need to verify tokens but only one service issues them. The symmetric approach is simpler to implement and slightly faster for token generation, but requires the same secret to be accessible wherever tokens are created or validated.
+
+For production environments, especially in microservices architectures or where security compliance is critical, the RSA approach is strongly recommended. The symmetric approach is suitable for smaller applications or internal tools where the added complexity of RSA keys isn't justified by the security requirements.

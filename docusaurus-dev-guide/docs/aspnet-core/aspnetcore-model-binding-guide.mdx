@@ -4,15 +4,867 @@ sidebar_label: "Model Binding Guide"
 sidebar_position: 9
 tags: [aspnet, model-binding, validation]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Correct and complete this information"/>
 
 # Complete Guide to Model Binding in ASP.NET Core
 
 A detailed exploration of how ASP.NET Core binds HTTP request data to action parameters — covering route values, query strings, body binding, custom binders, and validation.
 
-<iframe
-  src="https://claude.ai/public/artifacts/227d0a2f-bc6b-4c5e-a35a-3d9065a6bc4b/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="Complete Guide to Model Binding in ASP.NET Core"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# Complete Guide to Model Binding in ASP.NET Core
+
+## Introduction
+
+Model binding in ASP.NET Core is the process that automatically maps data from HTTP requests to your action method parameters. Think of it as a bridge between the raw HTTP request and your C# code. Instead of manually parsing query strings, form data, or JSON bodies, ASP.NET Core does this work for you automatically based on conventions and attributes.
+
+Understanding model binding is crucial because it affects how your application receives and processes data. The behavior changes significantly depending on whether you're building a traditional MVC web application with HTML views or a modern Web API that returns JSON data.
+
+## Understanding Binding Source Attributes
+
+Binding source attributes tell ASP.NET Core exactly where to look for data when binding parameters. These attributes act as explicit instructions that override the default inference behavior.
+
+### FromBody - Reading JSON from Request Body
+
+The `FromBody` attribute instructs ASP.NET Core to deserialize the HTTP request body (typically JSON or XML) into your parameter. This is the standard way to receive complex data structures in Web APIs.
+
+When you use `FromBody`, ASP.NET Core expects the client to send data with the `Content-Type: application/json` header. The JSON structure must match your C# class properties. For example, if your class has a `FirstName` property, the JSON should contain a `firstName` or `first_name` field (ASP.NET Core handles common naming conventions automatically).
+
+An important limitation is that you can only have one `FromBody` parameter per action method. This makes sense because the request body can only be read once as a stream. If you need to receive multiple complex objects, you should create a wrapper class that contains all of them.
+
+Here's a practical example of using `FromBody`:
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class UsersController : ControllerBase
+{
+    // The request body contains JSON that maps to CreateUserRequest
+    [HttpPost]
+    public IActionResult CreateUser([FromBody] CreateUserRequest request)
+    {
+        // The client sends:
+        // POST /api/users
+        // Content-Type: application/json
+        // {
+        //   "firstName": "John",
+        //   "lastName": "Doe",
+        //   "email": "john@example.com"
+        // }
+        
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+            
+        // Your business logic here
+        var userId = SaveUser(request);
+        
+        return Ok(new { id = userId, message = "User created successfully" });
+    }
+    
+    // You can mix FromBody with other sources
+    [HttpPut("{id}")]
+    public IActionResult UpdateUser(int id, [FromBody] UpdateUserRequest request)
+    {
+        // id comes from the URL route
+        // request comes from the JSON body
+        
+        if (id != request.UserId)
+            return BadRequest("ID mismatch");
+            
+        UpdateUserInDatabase(request);
+        return NoContent();
+    }
+}
+
+public class CreateUserRequest
+{
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public string Email { get; set; }
+}
+```
+
+### FromQuery - Reading from URL Query String
+
+The `FromQuery` attribute tells ASP.NET Core to look for data in the URL's query string (the part after the question mark). This is perfect for filtering, searching, pagination, and other parameters that you want visible in the URL.
+
+Query parameters are particularly useful for GET requests because they allow users to bookmark URLs with specific filters or share links with others. They're also cacheable by browsers and proxies, which can improve performance.
+
+ASP.NET Core handles query string binding flexibly. It supports nullable types for optional parameters, default values, and even complex objects where each property maps to a query parameter. Property names are matched case-insensitively by default.
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class ProductsController : ControllerBase
+{
+    // Binding a complex object from query string
+    [HttpGet]
+    public IActionResult GetProducts([FromQuery] ProductFilterRequest filter)
+    {
+        // URL: /api/products?category=electronics&minPrice=100&maxPrice=500&page=1&pageSize=20
+        
+        // ASP.NET Core automatically maps these to:
+        // filter.Category = "electronics"
+        // filter.MinPrice = 100
+        // filter.MaxPrice = 500
+        // filter.Page = 1
+        // filter.PageSize = 20
+        
+        var products = SearchProducts(filter);
+        return Ok(products);
+    }
+    
+    // Binding individual parameters
+    [HttpGet("search")]
+    public IActionResult Search(
+        [FromQuery] string keyword,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        // URL: /api/products/search?keyword=laptop&page=2&pageSize=20
+        
+        // Default values are used if parameters are missing
+        var results = PerformSearch(keyword, page, pageSize);
+        return Ok(results);
+    }
+    
+    // Binding collections from query string
+    [HttpGet("by-ids")]
+    public IActionResult GetByIds([FromQuery] List<int> ids)
+    {
+        // URL supports multiple formats:
+        // /api/products/by-ids?ids=1&ids=2&ids=3
+        // or with comma-separated values:
+        // /api/products/by-ids?ids=1,2,3
+        
+        var products = GetProductsByIds(ids);
+        return Ok(products);
+    }
+}
+
+public class ProductFilterRequest
+{
+    public string Category { get; set; }
+    public decimal? MinPrice { get; set; }  // Nullable for optional filtering
+    public decimal? MaxPrice { get; set; }
+    public int Page { get; set; } = 1;      // Default values
+    public int PageSize { get; set; } = 10;
+}
+```
+
+### FromForm - Reading Form Data and File Uploads
+
+The `FromForm` attribute instructs ASP.NET Core to read data from HTML form submissions or multipart form data. This is essential for file uploads and traditional form posts. Unlike JSON, form data uses the `application/x-www-form-urlencoded` or `multipart/form-data` content types.
+
+When dealing with file uploads, you use the special `IFormFile` interface, which provides access to the uploaded file's stream, filename, length, and content type. For multiple files, you can use `IFormFileCollection` or a `List<IFormFile>`.
+
+Form binding is particularly important when your application needs to support both structured data and binary files in the same request. A common example is uploading a document along with metadata like a title and description.
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class DocumentsController : ControllerBase
+{
+    // Single file upload with metadata
+    [HttpPost("upload")]
+    public async Task<IActionResult> UploadDocument([FromForm] DocumentUploadRequest request)
+    {
+        // The client sends multipart/form-data with:
+        // - title: "Q4 Report"
+        // - description: "Financial report for Q4 2024"
+        // - category: "Finance"
+        // - file: [binary file data]
+        
+        if (request.File == null || request.File.Length == 0)
+            return BadRequest("File is required");
+        
+        // Validate file size (example: max 10MB)
+        if (request.File.Length > 10 * 1024 * 1024)
+            return BadRequest("File size exceeds 10MB limit");
+        
+        // Validate file type
+        var allowedExtensions = new[] { ".pdf", ".docx", ".xlsx" };
+        var extension = Path.GetExtension(request.File.FileName).ToLowerInvariant();
+        
+        if (!allowedExtensions.Contains(extension))
+            return BadRequest($"File type {extension} is not allowed");
+        
+        // Generate unique filename to prevent collisions
+        var fileName = $"{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine("uploads", fileName);
+        
+        // Save the file
+        Directory.CreateDirectory("uploads");
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await request.File.CopyToAsync(stream);
+        }
+        
+        // Save metadata to database
+        var documentId = SaveDocumentMetadata(request, fileName);
+        
+        return Ok(new 
+        { 
+            id = documentId,
+            fileName = fileName, 
+            size = request.File.Length,
+            contentType = request.File.ContentType
+        });
+    }
+    
+    // Multiple file upload
+    [HttpPost("upload-multiple")]
+    public async Task<IActionResult> UploadMultiple([FromForm] MultipleFilesRequest request)
+    {
+        if (request.Files == null || !request.Files.Any())
+            return BadRequest("At least one file is required");
+        
+        var uploadedFiles = new List<object>();
+        
+        foreach (var file in request.Files)
+        {
+            if (file.Length > 0)
+            {
+                var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+                var filePath = Path.Combine("uploads", fileName);
+                
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await file.CopyToAsync(stream);
+                }
+                
+                uploadedFiles.Add(new 
+                { 
+                    originalName = file.FileName,
+                    savedName = fileName,
+                    size = file.Length 
+                });
+            }
+        }
+        
+        return Ok(new 
+        { 
+            category = request.Category,
+            filesUploaded = uploadedFiles.Count, 
+            files = uploadedFiles 
+        });
+    }
+}
+
+public class DocumentUploadRequest
+{
+    public string Title { get; set; }
+    public string Description { get; set; }
+    public string Category { get; set; }
+    public IFormFile File { get; set; }
+}
+
+public class MultipleFilesRequest
+{
+    public string Category { get; set; }
+    public List<IFormFile> Files { get; set; }
+}
+```
+
+You should configure file upload limits in your application settings to prevent abuse:
+
+```json
+{
+  "Kestrel": {
+    "Limits": {
+      "MaxRequestBodySize": 52428800  // 50 MB in bytes
+    }
+  }
+}
+```
+
+### Other Useful Binding Attributes
+
+Beyond the main three attributes, ASP.NET Core provides several other binding sources for specialized scenarios.
+
+The `FromRoute` attribute explicitly binds from URL route parameters. While this is usually automatic for parameters that appear in your route template, being explicit can improve code clarity.
+
+The `FromHeader` attribute reads values from HTTP headers. This is useful for API keys, authorization tokens, correlation IDs, or custom headers that carry metadata about the request.
+
+The `FromServices` attribute injects dependencies directly into action methods. While constructor injection is more common, method injection can be useful for dependencies that are only needed in specific actions.
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class OrdersController : ControllerBase
+{
+    // FromRoute - explicit route binding
+    [HttpGet("{id}")]
+    public IActionResult GetOrder([FromRoute] int id)
+    {
+        // URL: /api/orders/123
+        // id = 123
+        
+        var order = GetOrderById(id);
+        if (order == null)
+            return NotFound();
+            
+        return Ok(order);
+    }
+    
+    // FromHeader - reading custom headers
+    [HttpGet]
+    public IActionResult GetOrders(
+        [FromHeader(Name = "X-API-Key")] string apiKey,
+        [FromHeader(Name = "X-Correlation-Id")] string correlationId)
+    {
+        // Reads from HTTP headers:
+        // X-API-Key: abc123xyz
+        // X-Correlation-Id: 550e8400-e29b-41d4-a716-446655440000
+        
+        if (!ValidateApiKey(apiKey))
+            return Unauthorized();
+        
+        LogRequest(correlationId);
+        
+        var orders = GetAllOrders();
+        return Ok(orders);
+    }
+    
+    // FromServices - method-level dependency injection
+    [HttpPost("calculate")]
+    public IActionResult CalculateTotal(
+        [FromBody] OrderCalculationRequest request,
+        [FromServices] ITaxCalculator taxCalculator,
+        [FromServices] IShippingCalculator shippingCalculator)
+    {
+        // These services are injected only for this action
+        var subtotal = CalculateSubtotal(request.Items);
+        var tax = taxCalculator.Calculate(subtotal, request.Region);
+        var shipping = shippingCalculator.Calculate(request.ShippingMethod);
+        
+        return Ok(new 
+        { 
+            subtotal, 
+            tax, 
+            shipping, 
+            total = subtotal + tax + shipping 
+        });
+    }
+}
+```
+
+## Automatic Model Binding Inference
+
+Understanding when ASP.NET Core automatically infers binding sources is crucial for writing clean, maintainable code. The inference behavior depends entirely on whether you use the `ApiController` attribute on your controller class.
+
+### With ApiController Attribute (Web APIs)
+
+When you decorate your controller with `[ApiController]`, ASP.NET Core applies intelligent inference rules that make your API code cleaner and more intuitive. This attribute fundamentally changes how model binding works.
+
+The inference rules follow this logic. For complex types (any class you define), ASP.NET Core assumes the data comes from the request body as JSON. For simple types like integers, strings, or booleans that appear in your route template (like `{id}` or `{category}`), it binds from the route. For simple types that don't appear in the route, it assumes they're query string parameters. Special types like `IFormFile` are automatically treated as form data.
+
+This inference eliminates the need for explicit attributes in most cases, making your code more readable and reducing boilerplate.
+
+```csharp
+[ApiController]  // This attribute enables automatic inference
+[Route("api/[controller]")]
+public class ProductsController : ControllerBase
+{
+    // Inference example 1: Complex type without attribute
+    [HttpPost]
+    public IActionResult CreateProduct(CreateProductRequest request)
+    {
+        // Automatically inferred as [FromBody]
+        // ASP.NET Core knows to read JSON from the request body
+        // because CreateProductRequest is a complex type
+        
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+            
+        var productId = SaveProduct(request);
+        return CreatedAtAction(nameof(GetProduct), new { id = productId }, request);
+    }
+    
+    // Inference example 2: Route parameter
+    [HttpGet("{id}")]
+    public IActionResult GetProduct(int id)
+    {
+        // Automatically inferred as [FromRoute]
+        // The {id} in the route template tells ASP.NET Core
+        // to extract the value from the URL path
+        // URL: /api/products/123 → id = 123
+        
+        var product = FindProductById(id);
+        if (product == null)
+            return NotFound();
+            
+        return Ok(product);
+    }
+    
+    // Inference example 3: Query string parameters
+    [HttpGet]
+    public IActionResult SearchProducts(string keyword, int page, int pageSize)
+    {
+        // All automatically inferred as [FromQuery]
+        // Because they're simple types not in the route template
+        // URL: /api/products?keyword=laptop&page=1&pageSize=20
+        
+        var results = Search(keyword, page, pageSize);
+        return Ok(results);
+    }
+    
+    // Inference example 4: Mixing sources
+    [HttpPut("{id}")]
+    public IActionResult UpdateProduct(int id, UpdateProductRequest request, string comment)
+    {
+        // id → [FromRoute] (appears in URL template)
+        // request → [FromBody] (complex type)
+        // comment → [FromQuery] (simple type, not in route)
+        
+        // URL: PUT /api/products/123?comment=Updated%20price
+        // Body: { "name": "Laptop", "price": 999.99 }
+        
+        if (id != request.ProductId)
+            return BadRequest("ID mismatch");
+            
+        UpdateProductInDatabase(request, comment);
+        return NoContent();
+    }
+    
+    // Inference example 5: File uploads
+    [HttpPost("upload-image")]
+    public IActionResult UploadImage(int productId, IFormFile image)
+    {
+        // productId → [FromQuery] (simple type, not in route)
+        // image → [FromForm] (IFormFile is special type)
+        
+        // URL: POST /api/products/upload-image?productId=123
+        // Form data: image=[binary data]
+        
+        if (image == null || image.Length == 0)
+            return BadRequest("Image is required");
+            
+        SaveProductImage(productId, image);
+        return Ok();
+    }
+    
+    // Inference example 6: Collections
+    [HttpGet("by-categories")]
+    public IActionResult GetByCategories(List<string> categories, bool includeInactive)
+    {
+        // Both inferred as [FromQuery]
+        // URL: /api/products/by-categories?categories=electronics&categories=books&includeInactive=true
+        
+        var products = FindProductsByCategories(categories, includeInactive);
+        return Ok(products);
+    }
+}
+
+public class CreateProductRequest
+{
+    public string Name { get; set; }
+    public string Description { get; set; }
+    public decimal Price { get; set; }
+    public string Category { get; set; }
+}
+```
+
+The automatic inference with `ApiController` provides several additional benefits beyond just model binding. It automatically returns HTTP 400 Bad Request when model validation fails, without you needing to check `ModelState.IsValid` and return errors manually. It also generates better OpenAPI (Swagger) documentation because the framework knows exactly where each parameter comes from.
+
+### Without ApiController Attribute (Traditional Behavior)
+
+Without the `ApiController` attribute, ASP.NET Core uses a more complex and less intuitive binding process. This is the legacy behavior from earlier versions of ASP.NET Core and classic ASP.NET MVC.
+
+The binding process searches multiple sources in a specific order: form values first, then route values, then query string parameters. Notably, the request body is not automatically checked for complex types. This means if you send JSON without explicitly using `FromBody`, your parameter will be null.
+
+This behavior was designed for traditional MVC applications where HTML forms are the primary input method. However, it's confusing for API development and leads to common mistakes.
+
+```csharp
+// No [ApiController] attribute - legacy behavior
+[Route("api/[controller]")]
+public class LegacyController : ControllerBase
+{
+    [HttpPost]
+    public IActionResult CreateItem(CreateItemRequest request)
+    {
+        // WARNING: Without [ApiController], this won't work as expected!
+        // ASP.NET Core tries to bind from: Form → Route → Query
+        // It does NOT automatically read from JSON body
+        
+        // If client sends JSON:
+        // POST /api/legacy
+        // Content-Type: application/json
+        // { "name": "Item 1", "price": 99.99 }
+        
+        // Result: request will be NULL!
+        // You MUST use [FromBody] explicitly
+        
+        if (request == null)
+            return BadRequest("Request is null - did you forget [FromBody]?");
+            
+        return Ok();
+    }
+    
+    [HttpGet("{id}")]
+    public IActionResult GetItem(int id, string filter)
+    {
+        // id → From route (works correctly)
+        // filter → From query string (works correctly)
+        
+        // URL: /api/legacy/123?filter=active
+        
+        return Ok(new { id, filter });
+    }
+    
+    // The correct way without [ApiController]
+    [HttpPost("correct")]
+    public IActionResult CreateItemCorrect([FromBody] CreateItemRequest request)
+    {
+        // Now it works! The [FromBody] attribute is explicit
+        // ASP.NET Core knows to read from JSON body
+        
+        if (!ModelState.IsValid)
+        {
+            // Without [ApiController], you must manually check
+            // ModelState and return BadRequest
+            return BadRequest(ModelState);
+        }
+        
+        SaveItem(request);
+        return Ok();
+    }
+}
+```
+
+The lesson here is clear: always use `[ApiController]` for Web API controllers. It provides better defaults, clearer behavior, and prevents common mistakes. The only time you might not use it is when maintaining very old code or when you specifically need the legacy binding behavior.
+
+## Model Binding in MVC Controllers
+
+MVC controllers (those that return HTML views rather than JSON data) have fundamentally different binding behavior because they're designed for traditional web applications where users submit HTML forms. Understanding these differences is essential when building full-stack web applications.
+
+### MVC Binding Behavior
+
+In MVC controllers, you inherit from `Controller` (not `ControllerBase`), and you typically don't use the `ApiController` attribute. The binding process is optimized for form submissions and follows a specific search order.
+
+When ASP.NET Core receives a request, it first looks in form values posted from an HTML form. If the parameter isn't found there, it checks route parameters from the URL. Finally, it searches the query string. The key difference from API controllers is that MVC controllers naturally expect form-encoded data rather than JSON.
+
+This design makes perfect sense for traditional web applications where users fill out HTML forms and click submit buttons. The form fields are automatically mapped to your action method parameters based on matching names.
+
+```csharp
+public class CustomersController : Controller  // Inherits from Controller, not ControllerBase
+{
+    private readonly ICustomerService _customerService;
+    
+    public CustomersController(ICustomerService customerService)
+    {
+        _customerService = customerService;
+    }
+    
+    // GET request with query string parameters
+    [HttpGet]
+    public IActionResult Index(string searchTerm, int page = 1, int pageSize = 10)
+    {
+        // URL: /customers?searchTerm=john&page=2&pageSize=20
+        // All parameters automatically bind from query string
+        
+        var customers = _customerService.Search(searchTerm, page, pageSize);
+        
+        // Returns HTML view with customer list
+        return View(customers);
+    }
+    
+    // GET: Display empty form
+    [HttpGet]
+    public IActionResult Create()
+    {
+        // Returns HTML view with empty form
+        return View(new CreateCustomerViewModel());
+    }
+    
+    // POST: Process form submission
+    [HttpPost]
+    [ValidateAntiForgeryToken]  // Critical for security!
+    public IActionResult Create(CreateCustomerViewModel model)
+    {
+        // When user submits the HTML form:
+        // POST /customers/create
+        // Content-Type: application/x-www-form-urlencoded
+        // FirstName=John&LastName=Doe&Email=john@example.com
+        
+        // The model parameter automatically binds from form fields
+        // Form field names must match property names (case-insensitive)
+        
+        if (!ModelState.IsValid)
+        {
+            // Validation failed - return the same view with error messages
+            // The user's input is preserved and shown again
+            return View(model);
+        }
+        
+        // Save to database
+        _customerService.Create(model);
+        
+        // PRG pattern: Redirect after successful POST
+        // This prevents duplicate submissions if user refreshes
+        TempData["Message"] = "Customer created successfully";
+        return RedirectToAction(nameof(Index));
+    }
+    
+    // GET: Display edit form with existing data
+    [HttpGet]
+    public IActionResult Edit(int id)
+    {
+        // id comes from route or query string
+        // URL: /customers/edit/123 or /customers/edit?id=123
+        
+        var customer = _customerService.GetById(id);
+        if (customer == null)
+            return NotFound();
+        
+        // Return view with populated form
+        return View(customer);
+    }
+    
+    // POST: Process edit form submission
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public IActionResult Edit(int id, EditCustomerViewModel model)
+    {
+        // id → From route parameter or query string
+        // model → From form fields
+        
+        if (id != model.CustomerId)
+            return BadRequest("ID mismatch");
+        
+        if (!ModelState.IsValid)
+            return View(model);
+        
+        _customerService.Update(model);
+        
+        TempData["Message"] = "Customer updated successfully";
+        return RedirectToAction(nameof(Index));
+    }
+    
+    // DELETE operation via POST (HTML forms only support GET/POST)
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public IActionResult Delete(int id)
+    {
+        // id can come from form field or query string
+        
+        _customerService.Delete(id);
+        
+        TempData["Message"] = "Customer deleted successfully";
+        return RedirectToAction(nameof(Index));
+    }
+}
+
+public class CreateCustomerViewModel
+{
+    [Required(ErrorMessage = "First name is required")]
+    [StringLength(100)]
+    [Display(Name = "First Name")]
+    public string FirstName { get; set; }
+    
+    [Required]
+    [StringLength(100)]
+    [Display(Name = "Last Name")]
+    public string LastName { get; set; }
+    
+    [Required]
+    [EmailAddress(ErrorMessage = "Invalid email format")]
+    public string Email { get; set; }
+    
+    [Phone]
+    [Display(Name = "Phone Number")]
+    public string PhoneNumber { get; set; }
+}
+```
+
+The corresponding Razor view creates the HTML form that posts back to your controller:
+
+```html
+@model CreateCustomerViewModel
+
+<h2>Create New Customer</h2>
+
+<form asp-action="Create" method="post">
+    <!-- Anti-forgery token for security -->
+    <!-- asp-action automatically includes this -->
+    
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    
+    <div class="form-group">
+        <label asp-for="FirstName"></label>
+        <input asp-for="FirstName" class="form-control" />
+        <span asp-validation-for="FirstName" class="text-danger"></span>
+    </div>
+    
+    <div class="form-group">
+        <label asp-for="LastName"></label>
+        <input asp-for="LastName" class="form-control" />
+        <span asp-validation-for="LastName" class="text-danger"></span>
+    </div>
+    
+    <div class="form-group">
+        <label asp-for="Email"></label>
+        <input asp-for="Email" class="form-control" type="email" />
+        <span asp-validation-for="Email" class="text-danger"></span>
+    </div>
+    
+    <div class="form-group">
+        <label asp-for="PhoneNumber"></label>
+        <input asp-for="PhoneNumber" class="form-control" />
+        <span asp-validation-for="PhoneNumber" class="text-danger"></span>
+    </div>
+    
+    <button type="submit" class="btn btn-primary">Create Customer</button>
+    <a asp-action="Index" class="btn btn-secondary">Cancel</a>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+```
+
+When this form is submitted, it generates a POST request like this:
+
+```
+POST /customers/create
+Content-Type: application/x-www-form-urlencoded
+
+FirstName=John&LastName=Doe&Email=john@example.com&PhoneNumber=555-1234&__RequestVerificationToken=...
+```
+
+ASP.NET Core automatically maps these form fields to your `CreateCustomerViewModel` properties.
+
+### File Uploads in MVC
+
+File uploads in MVC work similarly to APIs but are integrated with traditional form submissions. You combine file inputs with other form fields in a single HTML form.
+
+```csharp
+public class DocumentsController : Controller
+{
+    // GET: Display upload form
+    [HttpGet]
+    public IActionResult Upload()
+    {
+        return View(new DocumentUploadViewModel());
+    }
+    
+    // POST: Process file upload
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Upload(DocumentUploadViewModel model)
+    {
+        // model.File automatically binds from the file input
+        // model.Title and model.Description bind from text inputs
+        
+        if (model.File == null || model.File.Length == 0)
+        {
+            ModelState.AddModelError("File", "Please select a file to upload");
+            return View(model);
+        }
+        
+        // Validate file type
+        var allowedExtensions = new[] { ".pdf", ".doc", ".docx" };
+        var extension = Path.GetExtension(model.File.FileName).ToLowerInvariant();
+        
+        if (!allowedExtensions.Contains(extension))
+        {
+            ModelState.AddModelError("File", 
+                $"Only {string.Join(", ", allowedExtensions)} files are allowed");
+            return View(model);
+        }
+        
+        // Validate file size (example: 5MB max)
+        if (model.File.Length > 5 * 1024 * 1024)
+        {
+            ModelState.AddModelError("File", "File size cannot exceed 5MB");
+            return View(model);
+        }
+        
+        // Save file
+        var uploadsFolder = Path.Combine(
+            Directory.GetCurrentDirectory(), 
+            "wwwroot", 
+            "uploads"
+        );
+        Directory.CreateDirectory(uploadsFolder);
+        
+        var uniqueFileName = $"{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+        
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await model.File.CopyToAsync(stream);
+        }
+        
+        // Save metadata to database
+        SaveDocumentToDatabase(model, uniqueFileName);
+        
+        TempData["Message"] = "Document uploaded successfully";
+        return RedirectToAction("Index");
+    }
+}
+
+public class DocumentUploadViewModel
+{
+    [Required]
+    [StringLength(200)]
+    public string Title { get; set; }
+    
+    [StringLength(1000)]
+    public string Description { get; set; }
+    
+    [Required(ErrorMessage = "Please select a file")]
+    public IFormFile File { get; set; }
+}
+```
+
+The upload form in your Razor view:
+
+```html
+@model DocumentUploadViewModel
+
+<h2>Upload Document</h2>
+
+<!-- enctype is CRITICAL for file uploads -->
+<form asp-action="Upload" method="post" enctype="multipart/form-data">
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    
+    <div class="form-group">
+        <label asp-for="Title"></label>
+        <input asp-for="Title" class="form-control" />
+        <span asp-validation-for="Title" class="text-danger"></span>
+    </div>
+    
+    <div class="form-group">
+        <label asp-for="Description"></label>
+        <textarea asp-for="Description" class="form-control" rows="3"></textarea>
+        <span asp-validation-for="Description" class="text-danger"></span>
+    </div>
+    
+    <div class="form-group">
+        <label asp-for="File">Choose File</label>
+        <input asp-for="File" type="file" class="form-control-file" />
+        <span asp-validation-for="File" class="text-danger"></span>
+    </div>
+    
+    <button type="submit" class="btn btn-primary">Upload</button>
+    <a asp-action="Index" class="btn btn-secondary">Cancel</a>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+```
+
+### Complex Object Binding in MVC
+
+MVC supports binding complex nested objects and collections from form submissions. This is particularly useful for master-detail scenarios like orders with line items.
+
+```csharp
+public class CreateOrderViewModel
+{
+    public string OrderNumber { get; set; }
+    
+    // Nested object
+    public CustomerInfo Customer { get; set; }
+    ```

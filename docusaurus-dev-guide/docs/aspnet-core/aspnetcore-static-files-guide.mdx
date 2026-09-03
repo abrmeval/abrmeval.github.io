@@ -4,15 +4,556 @@ sidebar_label: "Static Files Guide"
 sidebar_position: 10
 tags: [aspnet, static-files, middleware]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Verify if it is up to date"/>
 
 # Accessing Static Files in ASP.NET Core: A Complete Guide
 
 A comprehensive guide to configuring and serving static files in ASP.NET Core applications — wwwroot, custom providers, caching headers, and security considerations.
 
-<iframe
-  src="https://claude.ai/public/artifacts/1a45219f-fbc2-49e0-b895-47ae3cab1ed7/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="Accessing Static Files in ASP.NET Core"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# Accessing Static Files in ASP.NET Core: A Complete Guide
+
+## Introduction
+
+When building ASP.NET Core applications, you'll often need to include static files alongside your compiled code—things like email templates, configuration files, JSON schemas, or document templates. Unlike C# code that gets compiled into your DLL, these static files require special handling to ensure they're available at runtime.
+
+This guide explains how the MSBuild copy instruction works, why it's necessary, and how to properly access these files in your application code using the various environment abstractions .NET provides.
+
+---
+
+## Understanding the MSBuild Copy Instruction
+
+### The Instruction Itself
+
+```xml
+<ItemGroup>
+    <None Update="Templates\**\*">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+</ItemGroup>
+```
+
+This XML lives in your `.csproj` file and tells MSBuild exactly what to do with files that aren't source code.
+
+### Breaking Down Each Component
+
+The `<None>` element indicates that these files should not be compiled. MSBuild categorizes files into different item types: `<Compile>` for C# code, `<Content>` for web content, `<EmbeddedResource>` for resources compiled into the assembly, and `<None>` for files that exist but shouldn't be processed as code.
+
+The `Update="Templates\**\*"` attribute uses a glob pattern to match files. The `Templates\` part specifies the starting folder. The first `**` means "this folder and all subfolders recursively." The final `*` means "all files regardless of name or extension." Together, this pattern captures every file within the Templates directory tree.
+
+The `<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>` child element controls the copy behavior during build. This specific value means "copy the file to the output directory, but only if the source file is newer than any existing copy in the output."
+
+### Why This Instruction Is Necessary
+
+When you build a .NET project, the compiler processes your C# files and produces a DLL in the output directory (typically something like `bin/Debug/net8.0/`). However, static files like templates, configuration files, or data files don't automatically come along for the ride.
+
+Consider this project structure:
+
+```
+📁 MyWebApp/
+├── 📁 Templates/
+│   ├── welcome-email.html
+│   └── invoice-template.html
+├── Program.cs
+├── EmailService.cs
+└── MyWebApp.csproj
+```
+
+Without the copy instruction, after building you'd have:
+
+```
+📁 bin/Debug/net8.0/
+├── MyWebApp.dll
+├── MyWebApp.deps.json
+├── MyWebApp.runtimeconfig.json
+└── (no Templates folder!)
+```
+
+Your application compiles successfully, but when `EmailService` tries to load `welcome-email.html` at runtime, it fails with a `FileNotFoundException` because the Templates folder simply doesn't exist in the output directory.
+
+With the copy instruction properly configured:
+
+```
+📁 bin/Debug/net8.0/
+├── MyWebApp.dll
+├── MyWebApp.deps.json
+├── MyWebApp.runtimeconfig.json
+└── 📁 Templates/
+    ├── welcome-email.html
+    └── invoice-template.html
+```
+
+Now your runtime code can successfully locate and read these template files.
+
+---
+
+## The Three Copy Behavior Options
+
+MSBuild provides three options for the `CopyToOutputDirectory` element, each suited to different scenarios.
+
+### Never (The Default)
+
+```xml
+<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+```
+
+This is the implicit default when you don't specify anything. The file remains in your source directory and never gets copied to the output. Use this when files are only needed at design time or for documentation purposes.
+
+### Always
+
+```xml
+<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+```
+
+Every single build copies the file to the output directory, regardless of whether it has changed. This guarantees a fresh copy but makes builds slower, especially with large files or many files. Consider using this when you need absolute certainty that the output matches the source, such as during release builds or when files might be modified by external processes.
+
+### PreserveNewest (The Recommended Choice)
+
+```xml
+<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+```
+
+This option compares timestamps and only copies when the source file is newer than the destination. It provides the best balance of correctness and build performance for most scenarios. This is typically the right choice for templates, configuration files, and other static assets during development.
+
+---
+
+## Accessing Files at Runtime: The Environment Abstractions
+
+Once your files are in the output directory, you need to know how to find them from your code. .NET provides several abstractions for this purpose, and choosing the right one depends on your application type and architectural preferences.
+
+### Understanding the Key Paths
+
+Before diving into the abstractions, it's important to understand what paths we're dealing with.
+
+The **Content Root** is the base path where your application runs from. For a typical build, this is your output directory like `bin/Debug/net8.0/`. When published, it's wherever you deployed the application. This is where your DLL lives, and where your copied static files end up.
+
+The **Web Root** (ASP.NET Core only) is specifically the `wwwroot` folder, which contains publicly accessible static files like CSS, JavaScript, and images that browsers can request directly.
+
+The **Current Working Directory** is wherever the process was started from, which can vary dramatically based on how the application is launched. This is generally unreliable for locating application files.
+
+### IWebHostEnvironment (ASP.NET Core Web Applications)
+
+This is the primary abstraction for ASP.NET Core web applications. It provides access to both the content root and web root, plus information about the hosting environment (Development, Staging, Production).
+
+```csharp
+using Microsoft.AspNetCore.Hosting;
+
+public class EmailTemplateService
+{
+    private readonly IWebHostEnvironment _environment;
+    private readonly ILogger<EmailTemplateService> _logger;
+
+    // The framework injects IWebHostEnvironment automatically in ASP.NET Core apps
+    public EmailTemplateService(
+        IWebHostEnvironment environment,
+        ILogger<EmailTemplateService> logger)
+    {
+        _environment = environment;
+        _logger = logger;
+    }
+
+    public async Task<string> LoadTemplateAsync(
+        string templateName, 
+        CancellationToken cancellationToken = default)
+    {
+        // ContentRootPath gives us the base directory where the app runs
+        // For a typical deployment, this is where your DLL and copied files live
+        var templatePath = Path.Combine(
+            _environment.ContentRootPath,
+            "Templates",
+            templateName);
+
+        _logger.LogDebug(
+            "Loading template from path: {TemplatePath}", 
+            templatePath);
+
+        // Verify the file exists before attempting to read
+        if (!File.Exists(templatePath))
+        {
+            _logger.LogError(
+                "Template file not found: {TemplatePath}", 
+                templatePath);
+            throw new FileNotFoundException(
+                $"Email template '{templateName}' was not found.", 
+                templatePath);
+        }
+
+        // Use async file operations for better scalability
+        return await File.ReadAllTextAsync(templatePath, cancellationToken);
+    }
+
+    public string GetEnvironmentName()
+    {
+        // IWebHostEnvironment also tells you which environment you're running in
+        return _environment.EnvironmentName;
+    }
+}
+```
+
+Register and use this service in your application:
+
+```csharp
+// In Program.cs
+builder.Services.AddScoped<EmailTemplateService>();
+
+// In a controller or other service
+public class NotificationController : ControllerBase
+{
+    private readonly EmailTemplateService _templateService;
+
+    public NotificationController(EmailTemplateService templateService)
+    {
+        _templateService = templateService;
+    }
+
+    [HttpPost("send-welcome")]
+    public async Task<IActionResult> SendWelcomeEmail(
+        [FromBody] WelcomeEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var template = await _templateService.LoadTemplateAsync(
+            "welcome-email.html", 
+            cancellationToken);
+        
+        // Process template and send email...
+        return Ok();
+    }
+}
+```
+
+### IHostEnvironment (Generic Host Applications)
+
+For non-web applications—console apps, Windows Services, Azure Functions, or worker services—use `IHostEnvironment`. It provides the same content root functionality without the web-specific features.
+
+```csharp
+using Microsoft.Extensions.Hosting;
+
+public class DocumentGeneratorService
+{
+    private readonly IHostEnvironment _environment;
+
+    // IHostEnvironment is available in any .NET application using the Generic Host
+    public DocumentGeneratorService(IHostEnvironment environment)
+    {
+        _environment = environment;
+    }
+
+    public string LoadDocumentTemplate(string templateName)
+    {
+        // ContentRootPath works exactly the same as in IWebHostEnvironment
+        var templatePath = Path.Combine(
+            _environment.ContentRootPath,
+            "Templates",
+            "Documents",
+            templateName);
+
+        return File.ReadAllText(templatePath);
+    }
+
+    public bool IsDevelopment()
+    {
+        // You can still check the environment for conditional logic
+        return _environment.IsDevelopment();
+    }
+}
+```
+
+Setting up the Generic Host in a console application:
+
+```csharp
+// Program.cs for a console app or worker service
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+var host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices(services =>
+    {
+        // Your services can now inject IHostEnvironment
+        services.AddTransient<DocumentGeneratorService>();
+        services.AddHostedService<DocumentProcessingWorker>();
+    })
+    .Build();
+
+await host.RunAsync();
+```
+
+### AppContext.BaseDirectory (No Dependency Injection)
+
+Sometimes you need to resolve paths in contexts where dependency injection isn't available—perhaps in a static helper method, during application startup before DI is configured, or in a simple console application without the hosting infrastructure.
+
+```csharp
+public static class TemplateLoader
+{
+    // AppContext.BaseDirectory returns the directory containing the executing assembly
+    // This is reliable across different launch scenarios
+    public static string LoadTemplate(string relativePath)
+    {
+        var fullPath = Path.Combine(
+            AppContext.BaseDirectory,
+            relativePath);
+
+        if (!File.Exists(fullPath))
+        {
+            throw new FileNotFoundException(
+                $"Template not found at: {fullPath}");
+        }
+
+        return File.ReadAllText(fullPath);
+    }
+
+    // Example usage
+    public static string GetWelcomeEmailTemplate()
+    {
+        return LoadTemplate(Path.Combine("Templates", "welcome-email.html"));
+    }
+}
+```
+
+You might also encounter `AppDomain.CurrentDomain.BaseDirectory`, which returns the same value in most scenarios. The `AppContext.BaseDirectory` property is the more modern API introduced in .NET Core.
+
+### Directory.GetCurrentDirectory() — The Problematic Option
+
+You might be tempted to use `Directory.GetCurrentDirectory()` or `Environment.CurrentDirectory` because they seem straightforward. However, these return the **current working directory**, which is not the same as your application's directory.
+
+```csharp
+// PROBLEMATIC: Don't do this for locating application files
+var path = Path.Combine(
+    Directory.GetCurrentDirectory(),  // This can change!
+    "Templates",
+    "template.html");
+```
+
+The working directory depends on how the application was launched. Running from Visual Studio, it might be your project directory. Running from the command line, it's whatever directory you were in when you typed `dotnet run`. Running as a Windows Service, it might be `C:\Windows\System32`. This inconsistency makes it unsuitable for locating application files.
+
+---
+
+## Comparison of Path Resolution Approaches
+
+| Approach | Best For | Reliability | DI Required |
+|----------|----------|-------------|-------------|
+| `IWebHostEnvironment.ContentRootPath` | ASP.NET Core web apps | Excellent | Yes |
+| `IWebHostEnvironment.WebRootPath` | Files in wwwroot | Excellent | Yes |
+| `IHostEnvironment.ContentRootPath` | Console apps, workers, Azure Functions | Excellent | Yes |
+| `AppContext.BaseDirectory` | Static methods, startup code | Excellent | No |
+| `AppDomain.CurrentDomain.BaseDirectory` | Legacy code compatibility | Excellent | No |
+| `Directory.GetCurrentDirectory()` | **Avoid for app files** | Unreliable | No |
+| `Environment.CurrentDirectory` | **Avoid for app files** | Unreliable | No |
+
+---
+
+## Alternative Approach: Embedded Resources
+
+Instead of copying files to the output directory, you can embed them directly into your compiled assembly. This creates a self-contained DLL with no external file dependencies.
+
+### Configuring Embedded Resources
+
+```xml
+<ItemGroup>
+    <!-- Embed all files in the Templates folder into the assembly -->
+    <EmbeddedResource Include="Templates\**\*" />
+</ItemGroup>
+```
+
+### Accessing Embedded Resources
+
+```csharp
+using System.Reflection;
+
+public class EmbeddedTemplateService
+{
+    private readonly Assembly _assembly;
+    private readonly string _baseNamespace;
+
+    public EmbeddedTemplateService()
+    {
+        _assembly = Assembly.GetExecutingAssembly();
+        
+        // The base namespace is typically your project's root namespace
+        _baseNamespace = "MyWebApp";
+    }
+
+    public string LoadTemplate(string templateName)
+    {
+        // Embedded resource names use dots as separators and include the namespace
+        // A file at "Templates/Emails/welcome.html" becomes:
+        // "MyWebApp.Templates.Emails.welcome.html"
+        var resourceName = $"{_baseNamespace}.Templates.{templateName.Replace('/', '.')}";
+
+        using var stream = _assembly.GetManifestResourceStream(resourceName);
+        
+        if (stream == null)
+        {
+            // Helpful debugging: list all available resources
+            var availableResources = _assembly.GetManifestResourceNames();
+            throw new FileNotFoundException(
+                $"Embedded resource '{resourceName}' not found. " +
+                $"Available resources: {string.Join(", ", availableResources)}");
+        }
+
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    public async Task<string> LoadTemplateAsync(
+        string templateName,
+        CancellationToken cancellationToken = default)
+    {
+        var resourceName = $"{_baseNamespace}.Templates.{templateName.Replace('/', '.')}";
+
+        using var stream = _assembly.GetManifestResourceStream(resourceName);
+        
+        if (stream == null)
+        {
+            throw new FileNotFoundException(
+                $"Embedded resource '{resourceName}' not found.");
+        }
+
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync(cancellationToken);
+    }
+}
+```
+
+### Trade-offs Between File Copy and Embedded Resources
+
+**File Copy (CopyToOutputDirectory)** allows you to modify templates without recompiling, makes files visible in the file system for debugging, and works well when templates might be environment-specific or need external editing. However, it requires proper deployment procedures to ensure files are copied, and files could potentially be deleted or modified accidentally.
+
+**Embedded Resources** guarantee the files are always present (they're in the DLL), simplify deployment since you're shipping just the assembly, and prevent accidental modification. On the other hand, any change requires recompilation and redeployment, the assembly size grows with the embedded content, and debugging is harder since you can't just edit a file.
+
+---
+
+## Complete Working Example
+
+Here's a complete example showing a well-structured approach to template loading in an ASP.NET Core application:
+
+```csharp
+// ITemplateService.cs - Define the contract
+public interface ITemplateService
+{
+    Task<string> LoadTemplateAsync(
+        string templateName, 
+        CancellationToken cancellationToken = default);
+    
+    bool TemplateExists(string templateName);
+}
+
+// FileBasedTemplateService.cs - Implementation using file system
+public class FileBasedTemplateService : ITemplateService
+{
+    private readonly string _templatesBasePath;
+    private readonly ILogger<FileBasedTemplateService> _logger;
+
+    public FileBasedTemplateService(
+        IWebHostEnvironment environment,
+        ILogger<FileBasedTemplateService> logger)
+    {
+        // Resolve the templates path once during construction
+        _templatesBasePath = Path.Combine(
+            environment.ContentRootPath, 
+            "Templates");
+        
+        _logger = logger;
+
+        // Validate that the templates directory exists at startup
+        if (!Directory.Exists(_templatesBasePath))
+        {
+            _logger.LogWarning(
+                "Templates directory not found at {Path}. " +
+                "Ensure files are configured to copy to output directory.",
+                _templatesBasePath);
+        }
+    }
+
+    public async Task<string> LoadTemplateAsync(
+        string templateName,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPath = GetTemplatePath(templateName);
+
+        _logger.LogDebug("Loading template: {TemplatePath}", fullPath);
+
+        if (!File.Exists(fullPath))
+        {
+            _logger.LogError("Template not found: {TemplatePath}", fullPath);
+            throw new FileNotFoundException(
+                $"Template '{templateName}' not found.", 
+                fullPath);
+        }
+
+        return await File.ReadAllTextAsync(fullPath, cancellationToken);
+    }
+
+    public bool TemplateExists(string templateName)
+    {
+        var fullPath = GetTemplatePath(templateName);
+        return File.Exists(fullPath);
+    }
+
+    private string GetTemplatePath(string templateName)
+    {
+        // Prevent directory traversal attacks
+        var normalizedName = Path.GetFileName(templateName);
+        
+        if (normalizedName != templateName && !templateName.Contains(Path.DirectorySeparatorChar))
+        {
+            throw new ArgumentException(
+                "Template name contains invalid characters.", 
+                nameof(templateName));
+        }
+
+        return Path.Combine(_templatesBasePath, templateName);
+    }
+}
+
+// Program.cs - Registration
+builder.Services.AddScoped<ITemplateService, FileBasedTemplateService>();
+```
+
+And the corresponding `.csproj` configuration:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Copy all template files to output directory -->
+    <None Update="Templates\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
+```
+
+---
+
+## Troubleshooting Common Issues
+
+### Files Not Found at Runtime
+
+First, verify the files exist in the output directory by checking `bin/Debug/net8.0/Templates/` (or your equivalent output path). If they're missing, ensure your `.csproj` has the correct `CopyToOutputDirectory` configuration. The glob pattern `Templates\**\*` must match your actual folder structure.
+
+### Path Works in Development but Fails in Production
+
+This usually indicates you're using `Directory.GetCurrentDirectory()` somewhere. Replace it with `IWebHostEnvironment.ContentRootPath` or `AppContext.BaseDirectory`. Also verify your deployment process includes the static files.
+
+### Template Changes Not Reflected After Build
+
+If using `PreserveNewest`, the file only copies when the source is newer. Try a clean build (`dotnet clean` followed by `dotnet build`) or temporarily switch to `Always` to diagnose.
+
+### Embedded Resource Returns Null Stream
+
+The resource name must exactly match the namespace and path. Use `Assembly.GetManifestResourceNames()` to see all available resource names and compare with what you're requesting. Remember that embedded resource names use dots as separators, converting the file path structure.
+
+---
+
+## Summary
+
+Understanding how to properly configure and access static files is essential for robust .NET applications. The `CopyToOutputDirectory` MSBuild instruction ensures your files make it to where your application runs, while the various environment abstractions (`IWebHostEnvironment`, `IHostEnvironment`, and `AppContext.BaseDirectory`) provide reliable ways to locate those files at runtime.
+
+The key principles to remember are: always configure static files to copy to the output directory (use `PreserveNewest` for most scenarios), use the appropriate environment abstraction based on your application type, avoid `Directory.GetCurrentDirectory()` for locating application files, and consider embedded resources when you need guaranteed file availability without external dependencies.

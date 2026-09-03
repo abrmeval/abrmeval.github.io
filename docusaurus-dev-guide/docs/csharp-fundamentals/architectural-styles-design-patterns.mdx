@@ -4,15 +4,2396 @@ sidebar_label: "Architectural Styles & Patterns"
 sidebar_position: 3
 tags: [csharp, architecture, design-patterns, software-design]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic content="TODO: Verify if it is accurate"/>
 
 # Architectural Styles & Design Patterns: A Complete Study Guide
 
 Covers the major architectural styles (MVC, MVVM, Hexagonal, Clean Architecture, Event-Driven) and design patterns (Creational, Structural, Behavioral) with C# examples.
 
-<iframe
-  src="https://claude.ai/public/artifacts/d9933ead-5e52-4cfe-a2ce-ddadba6fc08d/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="Architectural Styles and Design Patterns"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# Architectural Styles & Design Patterns
+## A Complete Study Guide
+
+---
+
+## Understanding the Difference
+
+Before diving into specific patterns and styles, let's clarify what distinguishes these two important concepts in software design.
+
+**Design Patterns** operate at the code level. They are proven solutions to recurring problems that you encounter when writing classes and organizing objects. Think of them as templates for solving specific challenges within your codebase. When you're deciding how to structure a particular feature or component, design patterns give you tested approaches that have worked well for other developers facing similar problems.
+
+**Architectural Styles** work at a much higher level. They define the overall structure and organization of your entire application or system. An architectural style determines how major components communicate, how your codebase is organized, and how different parts of your system depend on each other. It's the big picture blueprint that shapes everything else you build.
+
+Here's a helpful way to think about it: if your application is a city, the architectural style defines whether it's organized like a medieval town with concentric walls, a modern grid city, or a sprawling suburban area. Design patterns, on the other hand, are like the blueprints for individual buildings within that city. Both are important, but they operate at different scales.
+
+---
+
+## Architectural Styles
+
+Architectural styles represent the fundamental organizing principles that shape how you structure entire applications or systems. Each style makes different tradeoffs and suits different types of problems.
+
+### Monolithic Architecture
+
+```
+┌─────────────────────────────────────────┐
+│                                         │
+│         Monolithic Application          │
+│                                         │
+│  ┌──────────┐  ┌──────────┐            │
+│  │   UI     │  │Business  │            │
+│  │  Layer   │  │  Logic   │            │
+│  └──────────┘  └──────────┘            │
+│                                         │
+│  ┌──────────┐  ┌──────────┐            │
+│  │   Data   │  │External  │            │
+│  │  Access  │  │Services  │            │
+│  └──────────┘  └──────────┘            │
+│                                         │
+│      All deployed as one unit           │
+└─────────────────────────────────────────┘
+```
+
+In a monolithic architecture, your entire application is built and deployed as a single unified unit. Everything lives together in one codebase and runs as one process. When you build a traditional ASP.NET MVC application where your controllers, business logic, data access, and views all live in one project, that's a monolith.
+
+**Strengths:** Monolithic architecture shines in its simplicity. Development is straightforward because everything is in one place. You don't need to worry about network calls between services or complex deployment orchestration. Debugging is easier because you can step through your entire application in one session. Testing is simpler because you don't need to mock out external services. For small to medium applications, or when you're first building something and learning the domain, monoliths are often the right choice.
+
+**Challenges:** As your application grows, the entire codebase can become difficult to understand and navigate. If you need to scale one feature that gets heavy traffic, you have to scale the entire application, which wastes resources. Different teams working on different features can step on each other's toes because they're all in the same codebase. Deploying changes becomes risky because a bug in any part can bring down the whole system.
+
+**When to Use:** Start with a monolith when building a new application. It lets you understand your domain, find natural boundaries between components, and deliver features quickly. You can always break it apart later once you understand where the real boundaries should be. Many successful companies run on well-designed monoliths.
+
+---
+
+### Layered Architecture
+
+```
+┌─────────────────────────────────────────┐
+│      Presentation Layer                 │
+│      (UI, Controllers, Views)           │
+└──────────────┬──────────────────────────┘
+               │ calls
+               ▼
+┌─────────────────────────────────────────┐
+│      Business Logic Layer               │
+│      (Services, Domain Logic)           │
+└──────────────┬──────────────────────────┘
+               │ calls
+               ▼
+┌─────────────────────────────────────────┐
+│      Data Access Layer                  │
+│      (Repositories, ORM)                │
+└──────────────┬──────────────────────────┘
+               │ calls
+               ▼
+┌─────────────────────────────────────────┐
+│      Database                           │
+└─────────────────────────────────────────┘
+```
+
+Layered architecture organizes your application into horizontal layers where each layer has a specific responsibility and typically only communicates with the layer directly above or below it. You've likely seen this in action with presentation layers, business logic layers, and data access layers.
+
+**Strengths:** This style creates clear separation of concerns where each layer has a well-defined purpose. You can modify the implementation of one layer without affecting others as long as you maintain the interface between them. Testing becomes easier because you can test each layer independently. Team members can specialize in different layers based on their expertise.
+
+**Challenges:** Changes that cut across all layers can be tedious because you need to modify code in multiple places. The architecture can become rigid if not designed carefully. Sometimes unnecessary layers are added just to follow the pattern, even when they don't add value. There's a risk of creating anemic domain models where your business layer becomes just a pass-through to the data layer.
+
+**When to Use:** Layered architecture works well for traditional enterprise applications where you have clear separation between presentation, business rules, and data storage. It's particularly effective when different teams own different layers or when you need to support multiple presentation interfaces for the same business logic.
+
+---
+
+### Client-Server Architecture
+
+```
+┌──────────────┐              ┌──────────────┐
+│   Client     │   Request    │    Server    │
+│              │─────────────▶│              │
+│  (Browser,   │              │ (Web Server, │
+│   Mobile     │   Response   │  API, DB)    │
+│   App)       │◀─────────────│              │
+└──────────────┘              └──────────────┘
+```
+
+Client-server architecture divides your system into two main parts where clients request services and servers provide them. Your web applications follow this pattern, with browsers acting as clients requesting resources from your ASP.NET servers.
+
+**Strengths:** This separation allows you to scale and maintain each side independently. You can upgrade server infrastructure without requiring client updates. Multiple different types of clients can connect to the same server. Centralized servers make it easier to manage data consistency and security.
+
+**Challenges:** The server can become a bottleneck if not properly scaled. Network latency and reliability become critical factors. If the server goes down, all clients lose access to functionality. You need to carefully design the communication protocol between clients and servers.
+
+**When to Use:** This is the foundation for most web applications and mobile apps. It's the natural choice when you have multiple client types accessing the same backend, or when you need centralized control over data and business logic.
+
+---
+
+### Microservices Architecture
+
+```
+┌────────────┐    ┌────────────┐    ┌────────────┐
+│  User      │    │  Order     │    │  Payment   │
+│  Service   │    │  Service   │    │  Service   │
+│            │    │            │    │            │
+│  ┌──────┐  │    │  ┌──────┐  │    │  ┌──────┐  │
+│  │ DB   │  │    │  │ DB   │  │    │  │ DB   │  │
+│  └──────┘  │    │  └──────┘  │    │  └──────┘  │
+└─────┬──────┘    └─────┬──────┘    └─────┬──────┘
+      │                 │                 │
+      └─────────────────┼─────────────────┘
+                   API Gateway
+```
+
+Microservices architecture breaks down your application into small, independent services that each handle a specific business capability and communicate through well-defined APIs. Unlike a monolith where everything runs as one unit, microservices let you deploy, scale, and update each service independently.
+
+**Strengths:** Each service can be developed, deployed, and scaled independently. Different services can use different technologies best suited for their specific needs. Teams can work on different services without stepping on each other. If one service fails, others can continue running. You can scale only the services that need more resources rather than scaling the entire application.
+
+**Challenges:** The system becomes distributed, which introduces complexity around network communication, data consistency, and debugging. You need robust DevOps practices and infrastructure to manage many services. Testing becomes more complex because services need to interact correctly. Determining the right boundaries for services requires deep domain understanding. Transaction management across services is challenging.
+
+**When to Use:** Microservices make sense for large applications with clear domain boundaries, when you have multiple teams that need to work independently, or when different parts of your system have different scaling requirements. However, start with a monolith and evolve to microservices once you understand your domain boundaries.
+
+---
+
+### Event-Driven Architecture
+
+```
+        ┌──────────────┐
+        │    Event     │
+        │     Bus      │
+        └───────┬──────┘
+                │
+        ┌───────┼───────┐
+        │       │       │
+    ┌───▼───┐ ┌─▼─────┐ ┌──▼────┐
+    │Service│ │Service│ │Service│
+    │   A   │ │   B   │ │   C   │
+    │       │ │       │ │       │
+    │Publish│ │Listen │ │Listen │
+    └───────┘ └───────┘ └───────┘
+```
+
+Event-driven architecture structures your application around the production, detection, and reaction to events. Components communicate by publishing and subscribing to events rather than making direct calls to each other.
+
+**Strengths:** This creates loosely coupled systems where adding new features doesn't require modifying existing components. Services don't need to know about each other, only about the events they care about. The system becomes naturally asynchronous and can handle high loads. You can easily add new subscribers to events without changing publishers.
+
+**Challenges:** Understanding the flow of execution becomes harder because it's not linear. Debugging distributed events can be challenging. You need robust event infrastructure and monitoring. Ensuring events are processed exactly once or handling failures requires careful design. The eventual consistency model can be harder to reason about than traditional synchronous systems.
+
+**When to Use:** Event-driven architecture excels when you need high scalability, when actions need to trigger multiple independent reactions, or when you're building reactive systems. It's particularly effective for real-time systems, IoT applications, or when integrating many independent services.
+
+---
+
+### Service-Oriented Architecture (SOA)
+
+```
+┌─────────────────────────────────────────┐
+│      Enterprise Service Bus (ESB)       │
+└───┬──────────┬──────────┬──────────┬───┘
+    │          │          │          │
+┌───▼────┐ ┌──▼─────┐ ┌──▼─────┐ ┌──▼─────┐
+│Customer│ │ Order  │ │Billing │ │Shipping│
+│Service │ │Service │ │Service │ │Service │
+└────────┘ └────────┘ └────────┘ └────────┘
+```
+
+Service-oriented architecture organizes your system as a collection of services that communicate through standardized protocols. While similar to microservices, SOA typically involves larger, more comprehensive services and often uses enterprise service buses for communication.
+
+**Strengths:** Services can be reused across different applications in your organization. The standardized communication protocols make integration easier. You can build composite applications by orchestrating existing services. Services can evolve independently as long as they maintain their contracts.
+
+**Challenges:** The enterprise service bus can become a complex single point of failure. Services tend to be larger and more coupled than in microservices. Governance becomes critical and can slow down development. The overhead of the ESB and protocol standards can impact performance.
+
+**When to Use:** SOA was the dominant enterprise architecture style before microservices. It's still relevant in large enterprises with many existing systems that need integration, especially when you need centralized governance and standardized communication protocols.
+
+---
+
+### Hexagonal Architecture (Ports and Adapters)
+
+```
+         External World
+         
+┌──────────────────────────────────────┐
+│        Adapters (Outer)              │
+│  ┌────────┐  ┌────────┐  ┌────────┐ │
+│  │   UI   │  │   DB   │  │  API   │ │
+│  └────┬───┘  └────┬───┘  └───┬────┘ │
+│       │           │          │      │
+│   ┌───▼───────────▼──────────▼───┐  │
+│   │       Ports (Interface)      │  │
+│   └───────────────┬──────────────┘  │
+│                   │                 │
+│         ┌─────────▼─────────┐       │
+│         │  Business Logic   │       │
+│         │   (Core Domain)   │       │
+│         └───────────────────┘       │
+└──────────────────────────────────────┘
+```
+
+Hexagonal architecture, also called Ports and Adapters, places your business logic at the center and isolates it from external concerns through well-defined interfaces or "ports." The "adapters" implement these interfaces to connect to actual technologies.
+
+**Strengths:** Your business logic becomes completely independent of infrastructure decisions. You can test your core logic without databases, web servers, or external services. Swapping technologies becomes easy because you only need to change adapters. The architecture makes it clear what your application does versus how it does it.
+
+**Challenges:** You need to design good abstractions for your ports, which requires upfront thinking. The extra layer of indirection can seem like overhead for simple applications. Team members need to understand and respect the boundaries between layers.
+
+**When to Use:** Hexagonal architecture is excellent when you want your business logic to be highly testable and independent of frameworks. It's particularly valuable when you might need to change infrastructure technologies or when you want to delay infrastructure decisions while focusing on business rules.
+
+---
+
+### Clean Architecture
+
+```
+         ┌─────────────────────────┐
+         │   Frameworks & Drivers  │
+         │   (Web, DB, UI, etc.)   │
+         └───────────┬─────────────┘
+                     │
+         ┌───────────▼─────────────┐
+         │  Interface Adapters     │
+         │ (Controllers, Gateways) │
+         └───────────┬─────────────┘
+                     │
+         ┌───────────▼─────────────┐
+         │    Application Layer    │
+         │      (Use Cases)        │
+         └───────────┬─────────────┘
+                     │
+         ┌───────────▼─────────────┐
+         │    Enterprise Layer     │
+         │  (Business Rules/       │
+         │   Domain Entities)      │
+         └─────────────────────────┘
+
+    Dependencies point inward only ───▶
+```
+
+Clean architecture builds on hexagonal architecture principles by organizing your code in concentric circles where dependencies always point inward toward your business rules. Your innermost circle contains enterprise business rules, surrounded by application business rules, then interface adapters, and finally frameworks and drivers on the outside.
+
+**Strengths:** Your business logic never depends on external frameworks or databases. The architecture enforces clear separation of concerns. Testing becomes straightforward because each layer can be tested independently. You can delay infrastructure decisions and change them later without affecting business logic.
+
+**Challenges:** The strict dependency rules require discipline to maintain. You need multiple projects or careful organization to enforce boundaries. The architecture can seem over-engineered for simple applications. Understanding the different layers and their responsibilities takes time.
+
+**When to Use:** Clean architecture is ideal for complex business applications where the business logic is valuable and needs to be protected from technology changes. It's particularly effective for long-lived applications where you'll need to adapt to new technologies over time.
+
+---
+
+### Onion Architecture
+
+```
+           External Dependencies
+                    ↓
+    ┌───────────────────────────────┐
+    │    Infrastructure Layer       │
+    │  (Database, External APIs)    │
+    │  ┌─────────────────────────┐  │
+    │  │  Application Services   │  │
+    │  │    (Use Cases)          │  │
+    │  │  ┌───────────────────┐  │  │
+    │  │  │ Domain Services   │  │  │
+    │  │  │  ┌─────────────┐  │  │  │
+    │  │  │  │   Domain    │  │  │  │
+    │  │  │  │   Model     │  │  │  │
+    │  │  │  │  (Entities) │  │  │  │
+    │  │  │  └─────────────┘  │  │  │
+    │  │  └───────────────────┘  │  │
+    │  └─────────────────────────┘  │
+    └───────────────────────────────┘
+    
+    All dependencies point inward ───▶
+```
+
+Onion architecture visualizes your application's structure like layers of an onion, with your domain at the center. The innermost ring contains your domain model with business entities and rules that have no dependencies on anything external. Moving outward, you find domain services, application services implementing use cases, and finally infrastructure and presentation on the outside.
+
+**Strengths:** Your business logic becomes completely testable without any infrastructure. The domain model is protected from external concerns. You can swap out data access technologies without touching business logic. The architecture naturally leads to highly maintainable code.
+
+**Challenges:** Requires careful design of your domain model and service layers. The dependency inversion needed for outer layers to depend on inner layer interfaces takes practice. Can feel like overhead for simple CRUD applications.
+
+**When to Use:** Onion architecture is essentially the same philosophy as Clean Architecture with slightly different terminology. Use it when you want to protect your business logic from infrastructure concerns and ensure your domain model drives the design. It's particularly valuable in domain-driven design contexts.
+
+---
+
+### Model-View-Controller (MVC)
+
+```
+    User Interaction
+          ↓
+    ┌─────────────┐
+    │ Controller  │
+    │             │
+    └──┬────────┬─┘
+       │        │
+       │        └──────────┐
+       ↓                   ↓
+ ┌──────────┐        ┌──────────┐
+ │  Model   │───────▶│   View   │
+ │          │        │          │
+ └──────────┘        └──────────┘
+      Data             Presentation
+```
+
+Model-View-Controller divides your application into three interconnected components where models manage data and business logic, views handle presentation, and controllers process user input and coordinate between models and views. Your ASP.NET MVC experience shows how this style enforces separation of concerns across your entire application.
+
+**Strengths:** Clear separation between data, presentation, and control logic. Multiple views can display the same data. You can modify the UI without changing business logic. Testing becomes easier because concerns are separated.
+
+**Challenges:** Can become complex with many small controllers. The flow of control isn't always obvious. Deciding what belongs in models versus controllers requires judgment. Can lead to "fat controllers" if business logic creeps in.
+
+**When to Use:** MVC is the foundation for most web frameworks and is excellent for applications with user interfaces that need to respond to user input. It's particularly effective when you need multiple ways to view or interact with the same data.
+
+---
+
+### Model-View-ViewModel (MVVM)
+
+```
+         User Interaction
+               ↓
+    ┌─────────────────────┐
+    │       View          │
+    │                     │
+    └──────────┬──────────┘
+               │ Two-way
+               │ Binding
+    ┌──────────▼──────────┐
+    │    ViewModel        │
+    │  (Presentation      │
+    │   Logic & State)    │
+    └──────────┬──────────┘
+               │
+    ┌──────────▼──────────┐
+    │       Model         │
+    │   (Business Logic   │
+    │    & Data)          │
+    └─────────────────────┘
+```
+
+MVVM extends the MVC concept by introducing a ViewModel that acts as an intermediary between the View and Model, handling presentation logic and data binding. This style is particularly popular in WPF, Xamarin, and modern JavaScript frameworks where two-way data binding between views and viewmodels creates responsive interfaces.
+
+**Strengths:** The ViewModel is highly testable without any UI dependencies. Two-way data binding reduces boilerplate code. Views become declarative and simpler. Changes to presentation logic don't require touching the view code.
+
+**Challenges:** Data binding can make it harder to understand what's happening. ViewModels can become bloated if not carefully designed. The learning curve for data binding frameworks can be steep. Debugging binding issues can be frustrating.
+
+**When to Use:** MVVM shines in rich client applications with complex UIs, particularly when using frameworks with strong data binding support. It's the natural choice for WPF, UWP, Xamarin, and similar platforms.
+
+---
+
+### Pipe and Filter Architecture
+
+```
+Raw Data → [Filter 1] → [Filter 2] → [Filter 3] → Result
+
+Example: Image Processing
+Image → [Resize] → [Adjust Colors] → [Apply Effect] → Output
+```
+
+Pipe and filter architecture structures your application as a series of processing steps where each filter transforms data and passes it through pipes to the next filter. You see this in data processing pipelines, streaming applications, and compiler designs where data flows through transformation stages.
+
+**Strengths:** Each filter is simple and focused on one transformation. Filters are reusable and can be combined in different ways. You can easily add, remove, or reorder filters. Processing can be parallelized. The data flow is easy to understand.
+
+**Challenges:** Error handling becomes complex when a filter fails mid-pipeline. Sharing state between filters can be difficult. Performance overhead from moving data between filters. Not suitable for interactive applications that need bidirectional communication.
+
+**When to Use:** Pipe and filter excels in data processing scenarios like ETL pipelines, log processing, media encoding, compiler design, or any workflow where data undergoes sequential transformations.
+
+---
+
+## Design Patterns
+
+Design patterns provide proven solutions to recurring problems at the code level. They're templates for how to structure classes and objects to solve specific design challenges. Understanding these patterns helps you write better code and communicate more effectively with other developers.
+
+### Creational Patterns
+
+Creational patterns deal with object creation mechanisms, helping you create objects in ways that suit your situation. They give you flexibility in what gets created, who creates it, how it gets created, and when.
+
+---
+
+#### Singleton Pattern (Creational)
+
+```csharp
+// Thread-safe Singleton implementation
+public sealed class ConfigurationManager
+{
+    private static readonly Lazy<ConfigurationManager> instance = 
+        new Lazy<ConfigurationManager>(() => new ConfigurationManager());
+    
+    private ConfigurationManager()
+    {
+        // Private constructor prevents direct instantiation
+        LoadConfiguration();
+    }
+    
+    public static ConfigurationManager Instance => instance.Value;
+    
+    private void LoadConfiguration()
+    {
+        // Load settings from file or environment
+    }
+}
+
+// Usage
+var config = ConfigurationManager.Instance;
+```
+
+The Singleton pattern ensures a class has only one instance throughout your application's lifetime and provides a global point of access to it. You might use this for configuration managers, logging services, or database connection pools where having multiple instances would cause problems or waste resources.
+
+**When to Use:** Singletons are appropriate when you truly need exactly one instance that coordinates actions across your system. However, be cautious with this pattern as it can make testing difficult and introduce hidden dependencies. Consider using dependency injection to provide shared instances instead of forcing global access through a Singleton.
+
+**Real-World Examples:** Database connection pools, application configuration managers, logging services, cache managers, and thread pools often use the Singleton pattern because these resources should be shared and coordinated across your entire application.
+
+---
+
+#### Factory Method Pattern (Creational)
+
+```csharp
+// Product interface
+public interface IPaymentProcessor
+{
+    void ProcessPayment(decimal amount);
+}
+
+// Concrete products
+public class CreditCardProcessor : IPaymentProcessor
+{
+    public void ProcessPayment(decimal amount)
+    {
+        Console.WriteLine($"Processing ${amount} via credit card");
+    }
+}
+
+public class PayPalProcessor : IPaymentProcessor
+{
+    public void ProcessPayment(decimal amount)
+    {
+        Console.WriteLine($"Processing ${amount} via PayPal");
+    }
+}
+
+// Creator with factory method
+public abstract class PaymentProcessorFactory
+{
+    public abstract IPaymentProcessor CreateProcessor();
+    
+    public void ExecutePayment(decimal amount)
+    {
+        var processor = CreateProcessor();
+        processor.ProcessPayment(amount);
+    }
+}
+
+// Concrete creators
+public class CreditCardFactory : PaymentProcessorFactory
+{
+    public override IPaymentProcessor CreateProcessor()
+    {
+        return new CreditCardProcessor();
+    }
+}
+
+public class PayPalFactory : PaymentProcessorFactory
+{
+    public override IPaymentProcessor CreateProcessor()
+    {
+        return new PayPalProcessor();
+    }
+}
+
+// Usage
+PaymentProcessorFactory factory = new PayPalFactory();
+factory.ExecutePayment(100.00m);
+```
+
+The Factory Method pattern defines an interface for creating objects but lets subclasses decide which class to instantiate. Instead of calling a constructor directly, you call a factory method that returns objects of a common interface or base class. This is useful when you don't know exactly what type of object you need until runtime.
+
+**When to Use:** Factory Method shines when a class can't anticipate the type of objects it needs to create, when subclasses should specify the objects to create, or when you want to localize the knowledge of which class to instantiate. It's particularly valuable when you're building frameworks or libraries where users will extend your code.
+
+**Real-World Examples:** Document editors creating different document types, UI frameworks creating platform-specific controls, game engines spawning different enemy types, and logistics systems creating different shipping methods all benefit from the Factory Method pattern.
+
+---
+
+#### Abstract Factory Pattern (Creational)
+
+```csharp
+// Abstract products
+public interface IButton
+{
+    void Render();
+}
+
+public interface ITextBox
+{
+    void Render();
+}
+
+// Concrete products for Windows
+public class WindowsButton : IButton
+{
+    public void Render() => Console.WriteLine("Rendering Windows button");
+}
+
+public class WindowsTextBox : ITextBox
+{
+    public void Render() => Console.WriteLine("Rendering Windows textbox");
+}
+
+// Concrete products for Mac
+public class MacButton : IButton
+{
+    public void Render() => Console.WriteLine("Rendering Mac button");
+}
+
+public class MacTextBox : ITextBox
+{
+    public void Render() => Console.WriteLine("Rendering Mac textbox");
+}
+
+// Abstract factory
+public interface IUIFactory
+{
+    IButton CreateButton();
+    ITextBox CreateTextBox();
+}
+
+// Concrete factories
+public class WindowsFactory : IUIFactory
+{
+    public IButton CreateButton() => new WindowsButton();
+    public ITextBox CreateTextBox() => new WindowsTextBox();
+}
+
+public class MacFactory : IUIFactory
+{
+    public IButton CreateButton() => new MacButton();
+    public ITextBox CreateTextBox() => new MacTextBox();
+}
+
+// Usage
+IUIFactory factory = new MacFactory();
+var button = factory.CreateButton();
+var textBox = factory.CreateTextBox();
+button.Render();
+textBox.Render();
+```
+
+Abstract Factory provides an interface for creating families of related objects without specifying their concrete classes. Imagine you're building a cross-platform UI framework where you need to create buttons, textboxes, and windows that look native on each platform. An abstract factory lets you create entire families of Windows controls or Mac controls through the same interface.
+
+**When to Use:** Abstract Factory is your go-to pattern when your system needs to work with multiple families of related products, when you want to ensure products from one family are used together, or when you want to provide a library of products and reveal only their interfaces, not their implementations.
+
+**Real-World Examples:** Cross-platform UI toolkits, database access layers supporting multiple database vendors, game engines with different rendering backends, and report generators creating different output formats all leverage Abstract Factory to manage families of related objects.
+
+---
+
+#### Builder Pattern (Creational)
+
+```csharp
+// Product
+public class HttpRequest
+{
+    public string Url { get; set; }
+    public string Method { get; set; }
+    public Dictionary<string, string> Headers { get; set; }
+    public string Body { get; set; }
+    public int Timeout { get; set; }
+}
+
+// Builder
+public class HttpRequestBuilder
+{
+    private readonly HttpRequest _request = new HttpRequest
+    {
+        Headers = new Dictionary<string, string>(),
+        Method = "GET",
+        Timeout = 30
+    };
+    
+    public HttpRequestBuilder WithUrl(string url)
+    {
+        _request.Url = url;
+        return this;
+    }
+    
+    public HttpRequestBuilder WithMethod(string method)
+    {
+        _request.Method = method;
+        return this;
+    }
+    
+    public HttpRequestBuilder AddHeader(string key, string value)
+    {
+        _request.Headers[key] = value;
+        return this;
+    }
+    
+    public HttpRequestBuilder WithBody(string body)
+    {
+        _request.Body = body;
+        return this;
+    }
+    
+    public HttpRequestBuilder WithTimeout(int seconds)
+    {
+        _request.Timeout = seconds;
+        return this;
+    }
+    
+    public HttpRequest Build()
+    {
+        // Could add validation here
+        return _request;
+    }
+}
+
+// Usage - fluent and readable
+var request = new HttpRequestBuilder()
+    .WithUrl("https://api.example.com/users")
+    .WithMethod("POST")
+    .AddHeader("Authorization", "Bearer token123")
+    .AddHeader("Content-Type", "application/json")
+    .WithBody("{\"name\": \"John\"}")
+    .WithTimeout(60)
+    .Build();
+```
+
+The Builder pattern separates the construction of complex objects from their representation, allowing you to create different representations using the same construction process. This shines when you need to create objects with many optional parameters. Instead of having constructors with dozens of parameters, you use a builder that lets you set only the properties you need in a fluent, readable way.
+
+**When to Use:** Builder is ideal when you have a complex object with many optional components, when you want to create different representations of the same type, or when the construction process must allow different representations for the object being constructed. It's especially valuable when constructors would have too many parameters or when the construction process involves multiple steps.
+
+**Real-World Examples:** Building complex HTTP requests, constructing SQL queries, creating test data, assembling email messages, and configuring application settings all become more manageable with the Builder pattern. Any scenario where you're composing an object from many optional parts benefits from this approach.
+
+---
+
+#### Prototype Pattern (Creational)
+
+```csharp
+// Prototype interface
+public interface IPrototype<T>
+{
+    T Clone();
+}
+
+// Concrete prototype
+public class DocumentTemplate : IPrototype<DocumentTemplate>
+{
+    public string Title { get; set; }
+    public List<string> Sections { get; set; }
+    public Dictionary<string, string> Metadata { get; set; }
+    
+    public DocumentTemplate()
+    {
+        Sections = new List<string>();
+        Metadata = new Dictionary<string, string>();
+    }
+    
+    public DocumentTemplate Clone()
+    {
+        return new DocumentTemplate
+        {
+            Title = this.Title,
+            Sections = new List<string>(this.Sections),
+            Metadata = new Dictionary<string, string>(this.Metadata)
+        };
+    }
+}
+
+// Usage
+var template = new DocumentTemplate
+{
+    Title = "Report Template",
+    Sections = { "Introduction", "Body", "Conclusion" },
+    Metadata = { ["Author"] = "System", ["Version"] = "1.0" }
+};
+
+// Clone the template for a new document
+var document1 = template.Clone();
+document1.Title = "Q1 Report";
+document1.Metadata["Author"] = "John";
+
+var document2 = template.Clone();
+document2.Title = "Q2 Report";
+document2.Metadata["Author"] = "Jane";
+```
+
+The Prototype pattern creates new objects by copying existing ones, called prototypes, rather than creating new instances from scratch. This is particularly useful when creating objects is expensive or complex. You clone a prototype and modify the copy as needed, which is faster than building from scratch each time.
+
+**When to Use:** Prototype excels when creating an instance is expensive (like objects that require database queries or complex calculations), when you want to avoid building a class hierarchy of factories, or when instances of a class can have only a few different combinations of state.
+
+**Real-World Examples:** Document templates, game character templates that are cloned and customized, configuration objects that serve as starting points for customization, and GUI component prototypes that are cloned to create many similar widgets all leverage the Prototype pattern effectively.
+
+---
+
+### Structural Patterns
+
+Structural patterns focus on how classes and objects are composed to form larger structures. They help you ensure that when one part changes, the entire structure doesn't need to change. These patterns are about organizing relationships between entities.
+
+---
+
+#### Adapter Pattern (Structural)
+
+```csharp
+// Target interface that client expects
+public interface IModernPaymentProcessor
+{
+    Task<PaymentResult> ProcessPaymentAsync(PaymentRequest request);
+}
+
+// Existing class with incompatible interface (Adaptee)
+public class LegacyPaymentSystem
+{
+    public bool MakePayment(string cardNumber, double amount, string currency)
+    {
+        Console.WriteLine($"Legacy system processing {amount} {currency}");
+        return true;
+    }
+}
+
+// Adapter that makes the legacy system work with the new interface
+public class PaymentAdapter : IModernPaymentProcessor
+{
+    private readonly LegacyPaymentSystem _legacySystem;
+    
+    public PaymentAdapter(LegacyPaymentSystem legacySystem)
+    {
+        _legacySystem = legacySystem;
+    }
+    
+    public async Task<PaymentResult> ProcessPaymentAsync(PaymentRequest request)
+    {
+        // Adapt the new interface to work with the legacy system
+        bool success = _legacySystem.MakePayment(
+            request.CardNumber, 
+            request.Amount, 
+            request.Currency
+        );
+        
+        return new PaymentResult { Success = success };
+    }
+}
+
+// Usage
+IModernPaymentProcessor processor = new PaymentAdapter(new LegacyPaymentSystem());
+var result = await processor.ProcessPaymentAsync(new PaymentRequest 
+{ 
+    CardNumber = "1234-5678", 
+    Amount = 100.00, 
+    Currency = "USD" 
+});
+```
+
+The Adapter pattern converts the interface of a class into another interface that clients expect, allowing classes with incompatible interfaces to work together. Think of it like a power adapter that lets you plug your US device into a European outlet. In code, you might wrap a third-party library with an adapter so it matches the interface your application expects.
+
+**When to Use:** Adapter is perfect when you want to use an existing class but its interface doesn't match what you need, when you need to create a reusable class that cooperates with classes that don't have compatible interfaces, or when you're integrating third-party libraries into your application. It's particularly valuable when you can't or shouldn't modify the existing class.
+
+**Real-World Examples:** Wrapping legacy systems with modern interfaces, integrating third-party libraries, creating platform-independent interfaces for platform-specific implementations, and adapting data formats between different systems all rely on the Adapter pattern.
+
+---
+
+#### Decorator Pattern (Structural)
+
+```csharp
+// Component interface
+public interface ICoffee
+{
+    string GetDescription();
+    decimal GetCost();
+}
+
+// Concrete component
+public class SimpleCoffee : ICoffee
+{
+    public string GetDescription() => "Simple coffee";
+    public decimal GetCost() => 2.00m;
+}
+
+// Base decorator
+public abstract class CoffeeDecorator : ICoffee
+{
+    protected ICoffee _coffee;
+    
+    public CoffeeDecorator(ICoffee coffee)
+    {
+        _coffee = coffee;
+    }
+    
+    public virtual string GetDescription() => _coffee.GetDescription();
+    public virtual decimal GetCost() => _coffee.GetCost();
+}
+
+// Concrete decorators
+public class MilkDecorator : CoffeeDecorator
+{
+    public MilkDecorator(ICoffee coffee) : base(coffee) { }
+    
+    public override string GetDescription() => 
+        _coffee.GetDescription() + ", milk";
+    public override decimal GetCost() => _coffee.GetCost() + 0.50m;
+}
+
+public class SugarDecorator : CoffeeDecorator
+{
+    public SugarDecorator(ICoffee coffee) : base(coffee) { }
+    
+    public override string GetDescription() => 
+        _coffee.GetDescription() + ", sugar";
+    public override decimal GetCost() => _coffee.GetCost() + 0.25m;
+}
+
+public class WhippedCreamDecorator : CoffeeDecorator
+{
+    public WhippedCreamDecorator(ICoffee coffee) : base(coffee) { }
+    
+    public override string GetDescription() => 
+        _coffee.GetDescription() + ", whipped cream";
+    public override decimal GetCost() => _coffee.GetCost() + 0.75m;
+}
+
+// Usage - combine decorators flexibly
+ICoffee coffee = new SimpleCoffee();
+coffee = new MilkDecorator(coffee);
+coffee = new SugarDecorator(coffee);
+coffee = new WhippedCreamDecorator(coffee);
+
+Console.WriteLine($"{coffee.GetDescription()}: ${coffee.GetCost()}");
+// Output: Simple coffee, milk, sugar, whipped cream: $3.50
+```
+
+The Decorator pattern attaches additional responsibilities to an object dynamically, providing a flexible alternative to subclassing for extending functionality. Imagine wrapping a basic coffee object with decorators for milk, sugar, and whipped cream, where each decorator adds its cost and behavior. This lets you combine features in any combination without creating a class for every possible combination.
+
+**When to Use:** Decorator shines when you need to add responsibilities to individual objects dynamically and transparently, when extension by subclassing is impractical or would lead to an explosion of subclasses, or when you want to add features that can be combined in various ways. It's particularly powerful when you need to compose behavior at runtime.
+
+**Real-World Examples:** Adding features to GUI components (scrollbars, borders, shadows), enhancing file I/O streams with buffering or encryption, adding middleware to request processing pipelines, and extending logging with timestamps, formatting, or multiple outputs all benefit from the Decorator pattern.
+
+---
+
+#### Facade Pattern (Structural)
+
+```csharp
+// Complex subsystems
+public class VideoFile
+{
+    public string Filename { get; set; }
+    public VideoFile(string filename) => Filename = filename;
+}
+
+public class CodecFactory
+{
+    public ICodec Extract(VideoFile file)
+    {
+        // Complex codec detection logic
+        Console.WriteLine("Detecting codec...");
+        return new MPEG4CompressionCodec();
+    }
+}
+
+public interface ICodec { }
+public class MPEG4CompressionCodec : ICodec { }
+public class OggCompressionCodec : ICodec { }
+
+public class BitrateReader
+{
+    public string Read(VideoFile file, ICodec codec)
+    {
+        Console.WriteLine("Reading file with codec...");
+        return "buffer data";
+    }
+    
+    public string Convert(string buffer, ICodec codec)
+    {
+        Console.WriteLine("Converting buffer...");
+        return "converted data";
+    }
+}
+
+public class AudioMixer
+{
+    public void Fix(string result)
+    {
+        Console.WriteLine("Fixing audio...");
+    }
+}
+
+// Facade providing simple interface
+public class VideoConverter
+{
+    public void Convert(string filename, string format)
+    {
+        Console.WriteLine($"Starting conversion of {filename} to {format}");
+        
+        var file = new VideoFile(filename);
+        var sourceCodec = new CodecFactory().Extract(file);
+        
+        ICodec destinationCodec = format == "mp4" 
+            ? new MPEG4CompressionCodec() 
+            : new OggCompressionCodec();
+        
+        var reader = new BitrateReader();
+        var buffer = reader.Read(file, sourceCodec);
+        var result = reader.Convert(buffer, destinationCodec);
+        
+        var mixer = new AudioMixer();
+        mixer.Fix(result);
+        
+        Console.WriteLine("Conversion complete!");
+    }
+}
+
+// Usage - simple interface hides complexity
+var converter = new VideoConverter();
+converter.Convert("my-video.mp4", "ogg");
+```
+
+The Facade pattern provides a simplified interface to a complex subsystem, making it easier to use. When you have a complicated system with many classes and intricate interactions, a facade gives clients a single, straightforward interface to accomplish common tasks. Your database access layer often acts as a facade, hiding the complexity of connection management, transaction handling, and query execution.
+
+**When to Use:** Facade is valuable when you want to provide a simple interface to a complex subsystem, when you need to layer your system and want to define entry points to each layer, or when there are many dependencies between clients and implementation classes. It's particularly useful when you're working with legacy code or complex third-party libraries.
+
+**Real-World Examples:** Simplifying complex library APIs, creating unified interfaces to disparate subsystems, providing high-level operations that orchestrate multiple low-level operations, and creating convenience methods for common tasks all benefit from the Facade pattern.
+
+---
+
+#### Proxy Pattern (Structural)
+
+```csharp
+// Subject interface
+public interface IImage
+{
+    void Display();
+}
+
+// Real subject - expensive to create
+public class HighResolutionImage : IImage
+{
+    private string _filename;
+    
+    public HighResolutionImage(string filename)
+    {
+        _filename = filename;
+        LoadFromDisk();
+    }
+    
+    private void LoadFromDisk()
+    {
+        Console.WriteLine($"Loading high resolution image: {_filename}");
+        // Simulate expensive operation
+        System.Threading.Thread.Sleep(2000);
+    }
+    
+    public void Display()
+    {
+        Console.WriteLine($"Displaying {_filename}");
+    }
+}
+
+// Proxy - controls access to real subject
+public class ImageProxy : IImage
+{
+    private string _filename;
+    private HighResolutionImage _realImage;
+    
+    public ImageProxy(string filename)
+    {
+        _filename = filename;
+    }
+    
+    public void Display()
+    {
+        // Lazy loading - only create real image when needed
+        if (_realImage == null)
+        {
+            _realImage = new HighResolutionImage(_filename);
+        }
+        _realImage.Display();
+    }
+}
+
+// Usage
+IImage image = new ImageProxy("large-photo.jpg");
+// Image not loaded yet
+
+Console.WriteLine("Image proxy created");
+// Do other work...
+
+image.Display();  // Now the image is loaded and displayed
+```
+
+The Proxy pattern provides a surrogate or placeholder for another object to control access to it. You might use a virtual proxy that delays creating an expensive object until you actually need it, or a protection proxy that checks permissions before allowing access to sensitive operations. Entity Framework's lazy loading uses this pattern to avoid loading related data until you access it.
+
+**When to Use:** Proxy is useful when you need lazy initialization to defer object creation, when you want to control access to an object, when you need to add logging or caching around an object's operations, or when you want to provide a local representative for a remote object. Different types of proxies solve different problems but all control access to the real object.
+
+**Real-World Examples:** Lazy loading relationships in ORMs, caching expensive operations, implementing access control and security checks, providing local representatives for remote services, and implementing copy-on-write behavior all leverage various types of proxies.
+
+---
+
+#### Composite Pattern (Structural)
+
+```csharp
+// Component interface
+public interface IFileSystemItem
+{
+    string Name { get; }
+    long GetSize();
+    void Display(int depth = 0);
+}
+
+// Leaf - represents individual files
+public class File : IFileSystemItem
+{
+    public string Name { get; private set; }
+    private long _size;
+    
+    public File(string name, long size)
+    {
+        Name = name;
+        _size = size;
+    }
+    
+    public long GetSize() => _size;
+    
+    public void Display(int depth = 0)
+    {
+        Console.WriteLine(new string('-', depth) + Name + $" ({_size} bytes)");
+    }
+}
+
+// Composite - represents folders that can contain files and other folders
+public class Folder : IFileSystemItem
+{
+    public string Name { get; private set; }
+    private List<IFileSystemItem> _children = new List<IFileSystemItem>();
+    
+    public Folder(string name)
+    {
+        Name = name;
+    }
+    
+    public void Add(IFileSystemItem item)
+    {
+        _children.Add(item);
+    }
+    
+    public void Remove(IFileSystemItem item)
+    {
+        _children.Remove(item);
+    }
+    
+    public long GetSize()
+    {
+        // Recursively calculate total size
+        return _children.Sum(child => child.GetSize());
+    }
+    
+    public void Display(int depth = 0)
+    {
+        Console.WriteLine(new string('-', depth) + Name + "/");
+        foreach (var child in _children)
+        {
+            child.Display(depth + 2);
+        }
+    }
+}
+
+// Usage
+var root = new Folder("root");
+var documents = new Folder("documents");
+var photos = new Folder("photos");
+
+documents.Add(new File("resume.pdf", 50000));
+documents.Add(new File("letter.docx", 25000));
+
+photos.Add(new File("vacation.jpg", 2000000));
+photos.Add(new File("family.jpg", 1500000));
+
+root.Add(documents);
+root.Add(photos);
+root.Add(new File("readme.txt", 1000));
+
+// Treat individual files and folders uniformly
+root.Display();
+Console.WriteLine($"Total size: {root.GetSize()} bytes");
+```
+
+The Composite pattern composes objects into tree structures to represent part-whole hierarchies, letting clients treat individual objects and compositions uniformly. File systems demonstrate this perfectly where both files and folders implement the same interface, but folders can contain other files and folders. You can perform operations like calculating size on either individual files or entire directory trees using the same code.
+
+**When to Use:** Composite is ideal when you want to represent part-whole hierarchies of objects, when you want clients to ignore the difference between compositions of objects and individual objects, or when your structure can be represented as a tree. It's particularly powerful when operations should work the same way whether applied to leaves or branches.
+
+**Real-World Examples:** File system hierarchies, organization structures with employees and departments, UI component hierarchies where containers can hold other containers or individual widgets, and document structures with sections containing paragraphs and images all naturally fit the Composite pattern.
+
+---
+
+#### Bridge Pattern (Structural)
+
+```csharp
+// Implementation interface
+public interface IRenderer
+{
+    void RenderCircle(float x, float y, float radius);
+    void RenderRectangle(float x, float y, float width, float height);
+}
+
+// Concrete implementations
+public class VectorRenderer : IRenderer
+{
+    public void RenderCircle(float x, float y, float radius)
+    {
+        Console.WriteLine($"Drawing circle as vector at ({x},{y}) radius {radius}");
+    }
+    
+    public void RenderRectangle(float x, float y, float width, float height)
+    {
+        Console.WriteLine($"Drawing rectangle as vector at ({x},{y}) size {width}x{height}");
+    }
+}
+
+public class RasterRenderer : IRenderer
+{
+    public void RenderCircle(float x, float y, float radius)
+    {
+        Console.WriteLine($"Drawing circle as pixels at ({x},{y}) radius {radius}");
+    }
+    
+    public void RenderRectangle(float x, float y, float width, float height)
+    {
+        Console.WriteLine($"Drawing rectangle as pixels at ({x},{y}) size {width}x{height}");
+    }
+}
+
+// Abstraction
+public abstract class Shape
+{
+    protected IRenderer renderer;
+    
+    protected Shape(IRenderer renderer)
+    {
+        this.renderer = renderer;
+    }
+    
+    public abstract void Draw();
+}
+
+// Refined abstractions
+public class Circle : Shape
+{
+    private float x, y, radius;
+    
+    public Circle(IRenderer renderer, float x, float y, float radius) : base(renderer)
+    {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+    }
+    
+    public override void Draw()
+    {
+        renderer.RenderCircle(x, y, radius);
+    }
+}
+
+public class Rectangle : Shape
+{
+    private float x, y, width, height;
+    
+    public Rectangle(IRenderer renderer, float x, float y, float width, float height) 
+        : base(renderer)
+    {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+    }
+    
+    public override void Draw()
+    {
+        renderer.RenderRectangle(x, y, width, height);
+    }
+}
+
+// Usage - mix and match shapes with renderers
+var vectorRenderer = new VectorRenderer();
+var rasterRenderer = new RasterRenderer();
+
+var circle = new Circle(vectorRenderer, 5, 10, 3);
+var rectangle = new Rectangle(rasterRenderer, 20, 30, 50, 40);
+
+circle.Draw();      // Vector circle
+rectangle.Draw();   // Raster rectangle
+```
+
+The Bridge pattern decouples an abstraction from its implementation so they can vary independently. This is useful when both your abstraction and implementation might change. For example, you might have different drawing APIs (DirectX, OpenGL) and different shapes (circles, rectangles), and you want to mix and match them without creating a class for every combination.
+
+**When to Use:** Bridge is valuable when you want to avoid a permanent binding between an abstraction and its implementation, when both the abstractions and implementations should be extensible by subclassing, or when changes in the implementation should have no impact on clients. It's particularly useful when you have a proliferation of classes from a coupled interface and implementation.
+
+**Real-World Examples:** Supporting multiple database backends, implementing cross-platform GUI frameworks, providing multiple rendering engines for graphics, and separating device-independent code from device-dependent code all benefit from the Bridge pattern.
+
+---
+
+#### Flyweight Pattern (Structural)
+
+```csharp
+// Flyweight - intrinsic state (shared)
+public class CharacterStyle
+{
+    public string Font { get; private set; }
+    public int Size { get; private set; }
+    public string Color { get; private set; }
+    
+    public CharacterStyle(string font, int size, string color)
+    {
+        Font = font;
+        Size = size;
+        Color = color;
+    }
+    
+    public void Display(char character, int position)
+    {
+        Console.WriteLine($"Char '{character}' at position {position} " +
+                         $"in {Font} {Size}pt {Color}");
+    }
+}
+
+// Flyweight factory
+public class StyleFactory
+{
+    private Dictionary<string, CharacterStyle> _styles = 
+        new Dictionary<string, CharacterStyle>();
+    
+    public CharacterStyle GetStyle(string font, int size, string color)
+    {
+        string key = $"{font}-{size}-{color}";
+        
+        if (!_styles.ContainsKey(key))
+        {
+            _styles[key] = new CharacterStyle(font, size, color);
+            Console.WriteLine($"Creating new style: {key}");
+        }
+        
+        return _styles[key];
+    }
+    
+    public int GetStyleCount() => _styles.Count;
+}
+
+// Context - extrinsic state (unique to each instance)
+public class Character
+{
+    private char _symbol;
+    private int _position;
+    private CharacterStyle _style;  // Shared flyweight
+    
+    public Character(char symbol, int position, CharacterStyle style)
+    {
+        _symbol = symbol;
+        _position = position;
+        _style = style;
+    }
+    
+    public void Display()
+    {
+        _style.Display(_symbol, _position);
+    }
+}
+
+// Usage
+var factory = new StyleFactory();
+var defaultStyle = factory.GetStyle("Arial", 12, "Black");
+var headingStyle = factory.GetStyle("Arial", 16, "Black");
+
+var characters = new List<Character>
+{
+    new Character('H', 0, headingStyle),
+    new Character('e', 1, defaultStyle),
+    new Character('l', 2, defaultStyle),
+    new Character('l', 3, defaultStyle),
+    new Character('o', 4, defaultStyle)
+};
+
+foreach (var character in characters)
+{
+    character.Display();
+}
+
+Console.WriteLine($"Total styles created: {factory.GetStyleCount()}");
+// Only 2 styles created despite 5 characters
+```
+
+The Flyweight pattern minimizes memory usage by sharing as much data as possible with similar objects. When you have many objects that share common data, flyweight extracts the shared state into separate objects that multiple instances can reference. Text editors use this to share character formatting data across thousands of characters rather than storing formatting with each character.
+
+**When to Use:** Flyweight is essential when your application uses a large number of objects, when storage costs are high because of the quantity of objects, when most object state can be made extrinsic (removed from the object and computed or passed in), or when many groups of objects can be replaced by relatively few shared objects. The key is separating intrinsic (shared) state from extrinsic (unique) state.
+
+**Real-World Examples:** Text editors sharing character formatting, game engines sharing textures and models across many instances, map applications sharing map tile data, and string interning in programming languages all use the Flyweight pattern to reduce memory consumption.
+
+---
+
+### Behavioral Patterns
+
+Behavioral patterns are concerned with algorithms and the assignment of responsibilities between objects. They describe not just patterns of objects or classes but also the patterns of communication between them. These patterns help you manage complex control flow and communication.
+
+---
+
+#### Observer Pattern (Behavioral)
+
+```csharp
+// Subject interface
+public interface ISubject
+{
+    void Attach(IObserver observer);
+    void Detach(IObserver observer);
+    void Notify();
+}
+
+// Observer interface
+public interface IObserver
+{
+    void Update(ISubject subject);
+}
+
+// Concrete subject
+public class StockTicker : ISubject
+{
+    private List<IObserver> _observers = new List<IObserver>();
+    private string _symbol;
+    private decimal _price;
+    
+    public string Symbol
+    {
+        get => _symbol;
+        set
+        {
+            _symbol = value;
+            Notify();
+        }
+    }
+    
+    public decimal Price
+    {
+        get => _price;
+        set
+        {
+            _price = value;
+            Notify();
+        }
+    }
+    
+    public void Attach(IObserver observer)
+    {
+        _observers.Add(observer);
+    }
+    
+    public void Detach(IObserver observer)
+    {
+        _observers.Remove(observer);
+    }
+    
+    public void Notify()
+    {
+        foreach (var observer in _observers)
+        {
+            observer.Update(this);
+        }
+    }
+}
+
+// Concrete observers
+public class PriceDisplay : IObserver
+{
+    private string _name;
+    
+    public PriceDisplay(string name)
+    {
+        _name = name;
+    }
+    
+    public void Update(ISubject subject)
+    {
+        if (subject is StockTicker ticker)
+        {
+            Console.WriteLine($"{_name}: {ticker.Symbol} is now ${ticker.Price}");
+        }
+    }
+}
+
+public class PriceAlert : IObserver
+{
+    private decimal _threshold;
+    
+    public PriceAlert(decimal threshold)
+    {
+        _threshold = threshold;
+    }
+    
+    public void Update(ISubject subject)
+    {
+        if (subject is StockTicker ticker && ticker.Price > _threshold)
+        {
+            Console.WriteLine($"ALERT: {ticker.Symbol} exceeded ${_threshold}!");
+        }
+    }
+}
+
+// Usage
+var stock = new StockTicker { Symbol = "AAPL", Price = 150.00m };
+
+var display1 = new PriceDisplay("Display 1");
+var display2 = new PriceDisplay("Display 2");
+var alert = new PriceAlert(155.00m);
+
+stock.Attach(display1);
+stock.Attach(display2);
+stock.Attach(alert);
+
+stock.Price = 152.00m;  // All observers notified
+stock.Price = 156.00m;  // All observers notified, alert triggers
+```
+
+The Observer pattern defines a one-to-many dependency between objects so that when one object changes state, all its dependents are notified automatically. This is fundamental to event-driven programming and you see it everywhere from UI frameworks to reactive programming. When you subscribe to events in C#, you're using the observer pattern.
+
+**When to Use:** Observer is perfect when a change to one object requires changing others and you don't know how many objects need to change, when an object should be able to notify other objects without making assumptions about who those objects are, or when you need to maintain consistency between related objects without making them tightly coupled.
+
+**Real-World Examples:** Event handling in UI frameworks, implementing model-view relationships, pub/sub messaging systems, monitoring and alerting systems, and reactive programming all rely heavily on the Observer pattern.
+
+---
+
+#### Strategy Pattern (Behavioral)
+
+```csharp
+// Strategy interface
+public interface ISortStrategy
+{
+    void Sort(List<int> list);
+}
+
+// Concrete strategies
+public class QuickSort : ISortStrategy
+{
+    public void Sort(List<int> list)
+    {
+        Console.WriteLine("Sorting using quick sort");
+        // Quick sort implementation
+        list.Sort(); // Using built-in for simplicity
+    }
+}
+
+public class MergeSort : ISortStrategy
+{
+    public void Sort(List<int> list)
+    {
+        Console.WriteLine("Sorting using merge sort");
+        // Merge sort implementation
+        list.Sort();
+    }
+}
+
+public class BubbleSort : ISortStrategy
+{
+    public void Sort(List<int> list)
+    {
+        Console.WriteLine("Sorting using bubble sort");
+        // Bubble sort implementation
+        for (int i = 0; i < list.Count - 1; i++)
+        {
+            for (int j = 0; j < list.Count - i - 1; j++)
+            {
+                if (list[j] > list[j + 1])
+                {
+                    int temp = list[j];
+                    list[j] = list[j + 1];
+                    list[j + 1] = temp;
+                }
+            }
+        }
+    }
+}
+
+// Context
+public class DataSorter
+{
+    private ISortStrategy _strategy;
+    
+    public DataSorter(ISortStrategy strategy)
+    {
+        _strategy = strategy;
+    }
+    
+    public void SetStrategy(ISortStrategy strategy)
+    {
+        _strategy = strategy;
+    }
+    
+    public void Sort(List<int> list)
+    {
+        _strategy.Sort(list);
+    }
+}
+
+// Usage
+var data = new List<int> { 5, 2, 8, 1, 9 };
+
+var sorter = new DataSorter(new QuickSort());
+sorter.Sort(data);
+
+// Change strategy at runtime
+sorter.SetStrategy(new BubbleSort());
+sorter.Sort(data);
+```
+
+The Strategy pattern defines a family of algorithms, encapsulates each one, and makes them interchangeable. The strategy lets the algorithm vary independently from clients that use it. You might have different sorting strategies, payment processing strategies, or validation strategies that you can swap in and out based on context without changing the client code.
+
+**When to Use:** Strategy is valuable when you have many related classes that differ only in their behavior, when you need different variants of an algorithm, when an algorithm uses data that clients shouldn't know about, or when a class defines many behaviors that appear as multiple conditional statements. It's particularly useful for eliminating complex conditionals by replacing them with polymorphism.
+
+**Real-World Examples:** Implementing different compression algorithms, providing various navigation routes in map applications, offering multiple payment methods, using different validation rules based on context, and selecting rendering strategies based on device capabilities all benefit from the Strategy pattern.
+
+---
+
+#### Command Pattern (Behavioral)
+
+```csharp
+// Command interface
+public interface ICommand
+{
+    void Execute();
+    void Undo();
+}
+
+// Receiver
+public class TextEditor
+{
+    private StringBuilder _text = new StringBuilder();
+    
+    public void InsertText(string text)
+    {
+        _text.Append(text);
+        Console.WriteLine($"Text: {_text}");
+    }
+    
+    public void DeleteText(int length)
+    {
+        if (length <= _text.Length)
+        {
+            _text.Remove(_text.Length - length, length);
+            Console.WriteLine($"Text: {_text}");
+        }
+    }
+    
+    public override string ToString() => _text.ToString();
+}
+
+// Concrete commands
+public class InsertCommand : ICommand
+{
+    private TextEditor _editor;
+    private string _text;
+    
+    public InsertCommand(TextEditor editor, string text)
+    {
+        _editor = editor;
+        _text = text;
+    }
+    
+    public void Execute()
+    {
+        _editor.InsertText(_text);
+    }
+    
+    public void Undo()
+    {
+        _editor.DeleteText(_text.Length);
+    }
+}
+
+public class DeleteCommand : ICommand
+{
+    private TextEditor _editor;
+    private int _length;
+    private string _deletedText;
+    
+    public DeleteCommand(TextEditor editor, int length)
+    {
+        _editor = editor;
+        _length = length;
+    }
+    
+    public void Execute()
+    {
+        _deletedText = _editor.ToString()
+            .Substring(_editor.ToString().Length - _length);
+        _editor.DeleteText(_length);
+    }
+    
+    public void Undo()
+    {
+        _editor.InsertText(_deletedText);
+    }
+}
+
+// Invoker
+public class CommandManager
+{
+    private Stack<ICommand> _history = new Stack<ICommand>();
+    
+    public void ExecuteCommand(ICommand command)
+    {
+        command.Execute();
+        _history.Push(command);
+    }
+    
+    public void Undo()
+    {
+        if (_history.Count > 0)
+        {
+            var command = _history.Pop();
+            command.Undo();
+        }
+    }
+}
+
+// Usage
+var editor = new TextEditor();
+var manager = new CommandManager();
+
+manager.ExecuteCommand(new InsertCommand(editor, "Hello "));
+manager.ExecuteCommand(new InsertCommand(editor, "World"));
+manager.ExecuteCommand(new DeleteCommand(editor, 5));
+
+manager.Undo();  // Undoes delete
+manager.Undo();  // Undoes second insert
+```
+
+The Command pattern encapsulates a request as an object, letting you parameterize clients with different requests, queue or log requests, and support undoable operations. Each command object contains all the information needed to execute an action. This pattern is perfect for implementing undo/redo functionality, transaction systems, or macro recording.
+
+**When to Use:** Command is ideal when you need to parameterize objects with operations, when you want to queue operations for later execution, when you need to support undo/redo, when you want to structure a system around high-level operations built on primitive operations, or when you need to log changes so that they can be reapplied in case of a system crash.
+
+**Real-World Examples:** Implementing undo/redo in editors, creating macro recording systems, building transactional operations, implementing job queues and task schedulers, and creating GUI button actions all leverage the Command pattern effectively.
+
+---
+
+#### Template Method Pattern (Behavioral)
+
+```csharp
+// Abstract class with template method
+public abstract class DataProcessor
+{
+    // Template method - defines the algorithm skeleton
+    public void Process()
+    {
+        LoadData();
+        
+        if (ValidateData())
+        {
+            TransformData();
+            SaveData();
+            SendNotification();
+        }
+        else
+        {
+            Console.WriteLine("Data validation failed");
+        }
+    }
+    
+    // Steps implemented by subclasses
+    protected abstract void LoadData();
+    protected abstract void TransformData();
+    protected abstract void SaveData();
+    
+    // Hook - subclasses can override but don't have to
+    protected virtual bool ValidateData()
+    {
+        return true;  // Default implementation
+    }
+    
+    // Concrete method used by all subclasses
+    private void SendNotification()
+    {
+        Console.WriteLine("Processing complete - notification sent");
+    }
+}
+
+// Concrete implementations
+public class CsvDataProcessor : DataProcessor
+{
+    protected override void LoadData()
+    {
+        Console.WriteLine("Loading data from CSV file");
+    }
+    
+    protected override void TransformData()
+    {
+        Console.WriteLine("Transforming CSV data");
+    }
+    
+    protected override void SaveData()
+    {
+        Console.WriteLine("Saving CSV data to database");
+    }
+    
+    protected override bool ValidateData()
+    {
+        Console.WriteLine("Validating CSV format");
+        return true;
+    }
+}
+
+public class XmlDataProcessor : DataProcessor
+{
+    protected override void LoadData()
+    {
+        Console.WriteLine("Loading data from XML file");
+    }
+    
+    protected override void TransformData()
+    {
+        Console.WriteLine("Transforming XML data");
+    }
+    
+    protected override void SaveData()
+    {
+        Console.WriteLine("Saving XML data to database");
+    }
+    
+    protected override bool ValidateData()
+    {
+        Console.WriteLine("Validating XML schema");
+        return true;
+    }
+}
+
+// Usage
+DataProcessor csvProcessor = new CsvDataProcessor();
+csvProcessor.Process();
+
+Console.WriteLine();
+
+DataProcessor xmlProcessor = new XmlDataProcessor();
+xmlProcessor.Process();
+```
+
+The Template Method pattern defines the skeleton of an algorithm in a base class but lets subclasses override specific steps without changing the algorithm's structure. You create a template with the overall process and mark certain steps as abstract or virtual so subclasses can customize those specific parts. This ensures the overall flow remains consistent while allowing flexibility where needed.
+
+**When to Use:** Template Method is valuable when you want to let clients extend only particular steps of an algorithm, when you have several classes that contain almost identical algorithms with some minor differences, or when you want to control the points at which extensions can be made. It's particularly effective for eliminating code duplication by pulling up the invariant behavior to a superclass.
+
+**Real-World Examples:** Implementing frameworks where users provide specific behavior, creating data processing pipelines with customizable steps, building game AI with customizable decision-making, and designing test frameworks with setup/teardown hooks all use the Template Method pattern.
+
+---
+
+#### Iterator Pattern (Behavioral)
+
+```csharp
+// Iterator interface
+public interface IIterator<T>
+{
+    bool HasNext();
+    T Next();
+    void Reset();
+}
+
+// Aggregate interface
+public interface IAggregate<T>
+{
+    IIterator<T> CreateIterator();
+}
+
+// Concrete aggregate
+public class BookCollection : IAggregate<string>
+{
+    private List<string> _books = new List<string>();
+    
+    public void AddBook(string book)
+    {
+        _books.Add(book);
+    }
+    
+    public IIterator<string> CreateIterator()
+    {
+        return new BookIterator(this);
+    }
+    
+    public int Count => _books.Count;
+    
+    public string this[int index] => _books[index];
+    
+    // Concrete iterator as nested class
+    private class BookIterator : IIterator<string>
+    {
+        private BookCollection _collection;
+        private int _currentIndex = -1;
+        
+        public BookIterator(BookCollection collection)
+        {
+            _collection = collection;
+        }
+        
+        public bool HasNext()
+        {
+            return _currentIndex < _collection.Count - 1;
+        }
+        
+        public string Next()
+        {
+            _currentIndex++;
+            return _collection[_currentIndex];
+        }
+        
+        public void Reset()
+        {
+            _currentIndex = -1;
+        }
+    }
+}
+
+// Usage
+var library = new BookCollection();
+library.AddBook("Design Patterns");
+library.AddBook("Clean Code");
+library.AddBook("The Pragmatic Programmer");
+
+var iterator = library.CreateIterator();
+
+Console.WriteLine("Books in library:");
+while (iterator.HasNext())
+{
+    Console.WriteLine($"- {iterator.Next()}");
+}
+
+// Note: In C#, you'd typically implement IEnumerable<T> instead
+// This example shows the classic pattern for understanding
+```
+
+The Iterator pattern provides a way to access elements of a collection sequentially without exposing its underlying representation. In C#, when you implement IEnumerable and use foreach loops, you're using the iterator pattern. It lets you traverse lists, trees, or any data structure using the same interface.
+
+**When to Use:** Iterator is essential when you want to access a collection's contents without exposing its internal structure, when you need to support multiple traversals of a collection, or when you want to provide a uniform interface for traversing different collection structures. Modern languages like C# have built-in iterator support through IEnumerable, but understanding the pattern helps you implement custom traversal logic.
+
+**Real-World Examples:** Traversing collections in any programming language, implementing custom tree or graph traversals, providing multiple ways to iterate over the same collection (forward, backward, filtered), and creating lazy evaluation sequences all use the Iterator pattern.
+
+---
+
+#### State Pattern (Behavioral)
+
+```csharp
+// State interface
+public interface IDocumentState
+{
+    void Publish(Document document);
+    void Reject(Document document);
+}
+
+// Context
+public class Document
+{
+    public IDocumentState State { get; set; }
+    public string Content { get; set; }
+    
+    public Document(string content)
+    {
+        Content = content;
+        State = new DraftState();
+    }
+    
+    public void Publish()
+    {
+        State.Publish(this);
+    }
+    
+    public void Reject()
+    {
+        State.Reject(this);
+    }
+}
+
+// Concrete states
+public class DraftState : IDocumentState
+{
+    public void Publish(Document document)
+    {
+        Console.WriteLine("Document sent for moderation");
+        document.State = new ModerationState();
+    }
+    
+    public void Reject(Document document)
+    {
+        Console.WriteLine("Cannot reject a draft");
+    }
+}
+
+public class ModerationState : IDocumentState
+{
+    public void Publish(Document document)
+    {
+        Console.WriteLine("Document published!");
+        document.State = new PublishedState();
+    }
+    
+    public void Reject(Document document)
+    {
+        Console.WriteLine("Document rejected, returning to draft");
+        document.State = new DraftState();
+    }
+}
+
+public class PublishedState : IDocumentState
+{
+    public void Publish(Document document)
+    {
+        Console.WriteLine("Document is already published");
+    }
+    
+    public void Reject(Document document)
+    {
+        Console.WriteLine("Cannot reject a published document");
+    }
+}
+
+// Usage
+var document = new Document("My article content");
+
+document.Publish();  // Draft -> Moderation
+document.Publish();  // Moderation -> Published
+document.Publish();  // Already published
+document.Reject();   // Cannot reject published
+
+var document2 = new Document("Another article");
+document2.Publish(); // Draft -> Moderation
+document2.Reject();  // Moderation -> Draft
+```
+
+The State pattern allows an object to alter its behavior when its internal state changes, making the object appear to change its class. Instead of having complex conditional logic based on state, you create separate state objects that each implement the same interface but behave differently. A document might have draft, review, and published states, each handling operations differently.
+
+**When to Use:** State is valuable when an object's behavior depends on its state and it must change behavior at runtime depending on that state, when operations have large multipart conditional statements that depend on the object's state, or when state-specific behavior should be independent and you want to add new states easily.
+
+**Real-World Examples:** Implementing document workflow systems, managing connection states in network protocols, controlling vending machine operations, implementing game character states (idle, running, jumping), and managing order processing states all benefit from the State pattern.
+
+---
+
+#### Chain of Responsibility Pattern (Behavioral)
+
+```csharp
+// Handler interface
+public abstract class ExpenseHandler
+{
+    protected ExpenseHandler _nextHandler;
+    
+    public void SetNext(ExpenseHandler handler)
+    {
+        _nextHandler = handler;
+    }
+    
+    public abstract void HandleRequest(ExpenseRequest request);
+}
+
+// Request
+public class ExpenseRequest
+{
+    public string Description { get; set; }
+    public decimal Amount { get; set; }
+    
+    public ExpenseRequest(string description, decimal amount)
+    {
+        Description = description;
+        Amount = amount;
+    }
+}
+
+// Concrete handlers
+public class TeamLeadHandler : ExpenseHandler
+{
+    private const decimal Limit = 1000;
+    
+    public override void HandleRequest(ExpenseRequest request)
+    {
+        if (request.Amount <= Limit)
+        {
+            Console.WriteLine($"Team Lead approved: {request.Description} - ${request.Amount}");
+        }
+        else if (_nextHandler != null)
+        {
+            Console.WriteLine($"Team Lead: Amount exceeds my limit, forwarding...");
+            _nextHandler.HandleRequest(request);
+        }
+    }
+}
+
+public class ManagerHandler : ExpenseHandler
+{
+    private const decimal Limit = 5000;
+    
+    public override void HandleRequest(ExpenseRequest request)
+    {
+        if (request.Amount <= Limit)
+        {
+            Console.WriteLine($"Manager approved: {request.Description} - ${request.Amount}");
+        }
+        else if (_nextHandler != null)
+        {
+            Console.WriteLine($"Manager: Amount exceeds my limit, forwarding...");
+            _nextHandler.HandleRequest(request);
+        }
+    }
+}
+
+public class DirectorHandler : ExpenseHandler
+{
+    private const decimal Limit = 20000;
+    
+    public override void HandleRequest(ExpenseRequest request)
+    {
+        if (request.Amount <= Limit)
+        {
+            Console.WriteLine($"Director approved: {request.Description} - ${request.Amount}");
+        }
+        else
+        {
+            Console.WriteLine($"Director: Amount too large, rejected: {request.Description}");
+        }
+    }
+}
+
+// Usage
+var teamLead = new TeamLeadHandler();
+var manager = new ManagerHandler();
+var director = new DirectorHandler();
+
+teamLead.SetNext(manager);
+manager.SetNext(director);
+
+var expense1 = new ExpenseRequest("Office supplies", 500);
+var expense2 = new ExpenseRequest("New computer", 2500);
+var expense3 = new ExpenseRequest("Team building event", 15000);
+
+teamLead.HandleRequest(expense1);
+Console.WriteLine();
+teamLead.HandleRequest(expense2);
+Console.WriteLine();
+teamLead.HandleRequest(expense3);
+```
+
+The Chain of Responsibility pattern chains receiving objects and passes a request along the chain until an object handles it. Each handler decides whether to process the request or pass it to the next handler. Middleware pipelines in ASP.NET Core follow this pattern, where each middleware component can process the request, pass it along, or short-circuit the chain.
+
+**When to Use:** Chain of Responsibility is ideal when more than one object may handle a request and the handler isn't known beforehand, when you want to issue a request to one of several objects without specifying the receiver explicitly, or when the set of objects that can handle a request should be specified dynamically. It's particularly useful for processing events or requests that could be handled at different levels.
+
+**Real-World Examples:** Middleware processing in web frameworks, event bubbling in UI systems, approval workflows where requests escalate through management levels, exception handling with multiple catch blocks, and logging frameworks with different log levels all use Chain of Responsibility.
+
+---
+
+#### Mediator Pattern (Behavioral)
+
+```csharp
+// Mediator interface
+public interface IChatMediator
+{
+    void SendMessage(string message, User user);
+    void AddUser(User user);
+}
+
+// Concrete mediator
+public class ChatRoom : IChatMediator
+{
+    private List<User> _users = new List<User>();
+    
+    public void AddUser(User user)
+    {
+        _users.Add(user);
+        user.ChatMediator = this;
+    }
+    
+    public void SendMessage(string message, User sender)
+    {
+        foreach (var user in _users)
+        {
+            // Don't send message back to sender
+            if (user != sender)
+            {
+                user.Receive(message, sender);
+            }
+        }
+    }
+}
+
+// Colleague
+public class User
+{
+    public string Name { get; private set; }
+    public IChatMediator ChatMediator { get; set; }
+    
+    public User(string name)
+    {
+        Name = name;
+    }
+    
+    public void Send(string message)
+    {
+        Console.WriteLine($"{Name} sends: {message}");
+        ChatMediator.SendMessage(message, this);
+    }
+    
+    public void Receive(string message, User sender)
+    {
+        Console.WriteLine($"{Name} receives from {sender.Name}: {message}");
+    }
+}
+
+// Usage
+var chatRoom = new ChatRoom();
+
+var alice = new User("Alice");
+var bob = new User("Bob");
+var charlie = new User("Charlie");
+
+chatRoom.AddUser(alice);
+chatRoom.AddUser(bob);
+chatRoom.AddUser(charlie);
+
+alice.Send("Hello everyone!");
+Console.WriteLine();
+bob.Send("Hi Alice!");
+```
+
+The Mediator pattern defines an object that encapsulates how a set of objects interact, promoting loose coupling by keeping objects from referring to each other explicitly. Instead of components communicating directly with many other components, they all communicate through a central mediator. This reduces the complexity of many-to-many relationships into more manageable one-to-many relationships.
+
+**When to Use:** Mediator is valuable when a set of objects communicate in well-defined but complex ways, when reusing an object is difficult because it refers to and communicates with many other objects, or when behavior distributed between several classes should be customizable without extensive subclassing. It's particularly useful when you have components that shouldn't be tightly coupled but need to collaborate.
+
+**Real-World Examples:** Implementing chat rooms where users communicate through the room, coordinating UI components where changes to one affect others, managing aircraft landing through air traffic control, orchestrating microservices through an API gateway, and implementing form validation where fields interact all use the Mediator pattern.
+
+---
+
+#### Memento Pattern (Behavioral)
+
+```csharp
+// Memento
+public class EditorMemento
+{
+    public string Content { get; private set; }
+    public int CursorPosition { get; private set; }
+    public DateTime Timestamp { get; private set; }
+    
+    public EditorMemento(string content, int cursorPosition)
+    {
+        Content = content;
+        CursorPosition = cursorPosition;
+        Timestamp = DateTime.Now;
+    }
+}
+
+// Originator
+public class TextEditor
+{
+    public string Content { get; set; }
+    public int CursorPosition { get; set; }
+    
+    public EditorMemento Save()
+    {
+        Console.WriteLine($"Saving state: '{Content}' at position {CursorPosition}");
+        return new EditorMemento(Content, CursorPosition);
+    }
+    
+    public void Restore(EditorMemento memento)
+    {
+        Content = memento.Content;
+        CursorPosition = memento.CursorPosition;
+        Console.WriteLine($"Restored state from {memento.Timestamp}");
+    }
+    
+    public void Display()
+    {
+        Console.WriteLine($"Content: '{Content}', Cursor: {CursorPosition}");
+    }
+}
+
+// Caretaker
+public class EditorHistory
+{
+    private Stack<EditorMemento> _history = new Stack<EditorMemento>();
+    
+    public void Save(TextEditor editor)
+    {
+        _history.Push(editor.Save());
+    }
+    
+    public void Undo(TextEditor editor)
+    {
+        if (_history.Count > 0)
+        {
+            editor.Restore(_history.Pop());
+        }
+        else
+        {
+            Console.WriteLine("No more undo history");
+        }
+    }
+}
+
+// Usage
+var editor = new TextEditor();
+var history = new EditorHistory();
+
+editor.Content = "Hello";
+editor.CursorPosition = 5;
+history.Save(editor);
+
+editor.Content = "Hello World";
+editor.CursorPosition = 11;
+history.Save(editor);
+
+editor.Content = "Hello World!";
+editor.CursorPosition = 12;
+editor.Display();
+
+history.Undo(editor);  // Restore to "Hello World"
+editor.Display();
+
+history.Undo(editor);  // Restore to "Hello"
+editor.Display();
+```
+
+The Memento pattern captures and externalizes an object's internal state without violating encapsulation, so you can restore the object to this state later. This is excellent for implementing undo functionality, save points, or transaction rollbacks. The memento stores a snapshot of state that can be used to restore an object later.
+
+**When to Use:** Memento is ideal when you need to save and restore an object's state, when exposing the internal state would violate encapsulation, or when you want to implement undo/redo functionality. It's particularly valuable when you need to take snapshots of state for backup or history purposes.
+
+**Real-World Examples:** Implementing undo/redo in editors, creating save points in games, implementing transaction rollback in databases, storing configuration snapshots, and maintaining browsing history all leverage the Memento pattern.
+
+---
+
+#### Visitor Pattern (Behavioral)
+
+```csharp
+// Element interface
+public interface IInsuranceElement
+{
+    void Accept(IInsuranceVisitor visitor);
+}
+
+// Concrete elements
+public class Car : IInsuranceElement
+{
+    public string Model { get; set; }
+    public int Year { get; set; }
+    
+    public void Accept(IInsuranceVisitor visitor)
+    {
+        visitor.VisitCar(this);
+    }
+}
+
+public class Home : IInsuranceElement
+{
+    public string Address { get; set; }
+    public int SquareFeet { get; set; }
+    
+    public void Accept(IInsuranceVisitor visitor)
+    {
+        visitor.VisitHome(this);
+    }
+}
+
+public class Life : IInsuranceElement
+{
+    public string PolicyHolder { get; set; }
+    public int Age { get; set; }
+    
+    public void Accept(IInsuranceVisitor visitor)
+    {
+        visitor.VisitLife(this);
+    }
+}
+
+// Visitor interface
+public interface IInsuranceVisitor
+{
+    void VisitCar(Car car);
+    void VisitHome(Home home);
+    void VisitLife(Life life);
+}
+
+// Concrete visitors
+public class PremiumCalculator : IInsuranceVisitor
+{
+    public void VisitCar(Car car)
+    {
+        int premium = (DateTime.Now.Year - car.Year) * 100;
+        Console.WriteLine($"Car insurance premium for {car.Model}: ${premium}");
+    }
+    
+    public void VisitHome(Home home)
+    {
+        decimal premium = home.SquareFeet * 0.5m;
+        Console.WriteLine($"Home insurance premium for {home.Address}: ${premium}");
+    }
+    
+    public void VisitLife(Life life)
+    {
+        int premium = life.Age * 50;
+        Console.WriteLine($"Life insurance premium for {life.PolicyHolder}: ${premium}");
+    }
+}
+
+public class RiskAssessor : IInsuranceVisitor
+{
+    public void VisitCar(Car car)
+    {
+        string risk = car.Year < 2010 ? "High" : "Low";
+        Console.WriteLine($"Car risk for {car.Model}: {risk}");
+    }
+    
+    public void VisitHome(Home home)
+    {
+        string risk = home.SquareFeet > 3000 ? "High" : "Medium";
+        Console.WriteLine($"Home risk for {home.Address}: {risk}");
+    }
+    
+    public void VisitLife(Life life)
+    {
+        string risk = life.Age > 50 ? "High" : "Low";
+        Console.WriteLine($"Life risk for {life.PolicyHolder}: {risk}");
+    }
+}
+
+// Usage
+var policies = new List<IInsuranceElement>
+{
+    new Car { Model = "Tesla Model 3", Year = 2020 },
+    new Home { Address = "123 Main St", SquareFeet = 2500 },
+    new Life { PolicyHolder = "John Doe", Age = 45 }
+};
+
+var calculator = new PremiumCalculator();
+var assessor = new RiskAssessor();
+
+Console.WriteLine("Calculating premiums:");
+foreach (var policy in policies)
+{
+    policy.Accept(calculator);
+}
+
+Console.WriteLine("\nAssessing risks:");
+foreach (var policy in policies)
+{
+    policy.Accept(assessor);
+}
+```
+
+The Visitor pattern lets you define new operations on elements of an object structure without changing the classes of the elements. You create visitor objects that implement operations, and elements accept visitors to perform those operations. This is useful when you have a stable object structure but need to add many different operations over time.
+
+**When to Use:** Visitor is valuable when you have many distinct and unrelated operations to perform on objects in a structure, when the object structure classes rarely change but you often need to define new operations, or when you want to gather related operations into one class rather than scattering them across the structure. The key trade-off is that adding new element types becomes harder.
+
+**Real-World Examples:** Implementing operations on abstract syntax trees in compilers, applying different rendering operations on document structures, performing various calculations on organizational hierarchies, and executing different reports on business object structures all benefit from the Visitor pattern.
+
+---
+
+## Quick Reference: When to Use What
+
+Understanding when to apply each pattern and style comes with experience, but here are some guiding principles to help you make good decisions.
+
+### Choosing Architectural Styles
+
+**Start with a monolith** when you're building a new application or learning a domain. The simplicity lets you focus on business logic and iterate quickly. You can always evolve to more complex architectures later.
+
+**Use layered architecture** when you need clear separation of concerns and have traditional three-tier applications. It's straightforward and works well for most business applications.
+
+**Move to microservices** only when you have clear domain boundaries, multiple teams, and genuine scalability needs. Don't start here unless you have the DevOps maturity to support it.
+
+**Choose Clean or Onion Architecture** when your business logic is valuable and complex, when you expect technology changes over time, or when testability is critical. These styles protect your domain from infrastructure concerns.
+
+**Consider event-driven architecture** when you need high scalability, when actions trigger multiple independent reactions, or when building real-time reactive systems.
+
+**Use MVC or MVVM** when building applications with user interfaces. MVC works well for web applications, while MVVM excels in rich client applications with data binding.
+
+### Choosing Design Patterns
+
+**Creational patterns** solve problems around object creation. Use Singleton sparingly for truly shared resources, Factory Method when you need flexibility in what gets created, Abstract Factory for families of related objects, Builder for complex objects with many options, and Prototype when cloning is cheaper than creating from scratch.
+
+**Structural patterns** help you compose objects and classes. Use Adapter to make incompatible interfaces work together, Decorator to add responsibilities dynamically, Facade to simplify complex subsystems, Proxy to control access or defer expensive operations, Composite for tree structures, Bridge to separate abstraction from implementation, and Flyweight when memory is constrained.
+
+**Behavioral patterns** manage algorithms and object interactions. Use Observer for event-driven systems, Strategy to make algorithms interchangeable, Command for undo/redo and transaction systems, Template Method to define algorithm skeletons, Iterator to traverse collections, State to manage state-dependent behavior, Chain of Responsibility for request processing pipelines, Mediator to reduce coupling between communicating objects, Memento for undo and snapshots, and Visitor to add operations without changing element classes.
+
+---
+
+## Final Thoughts on Learning and Applying Patterns
+
+As you continue learning Python, Node.js, JavaScript, React, and GraphQL alongside your C# and Azure experience, you'll start recognizing these patterns appearing across different technology stacks. The names might vary slightly, the syntax will differ, but the fundamental problems they solve and the solutions they provide remain consistent.
+
+The most important principle to remember is that patterns and architectural styles are tools, not rules. Don't force a pattern where it doesn't fit just because you learned it recently. The best developers recognize which patterns naturally emerge from their problems and apply them judiciously. Sometimes the simplest solution without any formal pattern is the right choice.
+
+Your journey of learning these concepts will be iterative. First you'll recognize patterns in code you read. Then you'll start identifying opportunities to apply them in your own code. Eventually, these patterns will become part of your design vocabulary, and you'll use them naturally without conscious effort.
+
+Keep this guide handy as a reference when you encounter these patterns in frameworks, libraries, and production code. Understanding these foundational concepts will make you a more effective developer regardless of which technology stack you're working with. Good luck with your continued learning in software architecture and design!

@@ -4,15 +4,849 @@ sidebar_label: "In-Process vs Out-of-Process"
 sidebar_position: 11
 tags: [aspnet, iis, hosting, execution-model]
 ---
+import { ReviewTopic } from "@site/src/components/ReviewTopic";
+
+<ReviewTopic />
 
 # In-Process vs Out-of-Process Execution Models for ASP.NET Applications
 
 A comprehensive guide to understanding in-process and out-of-process execution models in ASP.NET applications — performance characteristics, configuration, and when to choose each.
 
-<iframe
-  src="https://claude.ai/public/artifacts/fa99969b-5f6e-4f67-b719-804638532f26/embed"
-  style={{width: '100%', height: '85vh', border: 'none'}}
-  title="In-Process vs Out-of-Process for ASP.NET Applications"
-  allow="clipboard-write"
-  allowFullScreen
-/>
+# In-Process vs Out-of-Process Execution Models for ASP.NET Applications
+
+## Overview
+
+The execution model determines how your ASP.NET application runs in relation to the web server process. This architectural decision impacts performance, resource management, debugging, and deployment capabilities. This guide covers both traditional ASP.NET Core hosting and Azure Functions execution models.
+
+## Table of Contents
+
+1. [ASP.NET Core Hosting Models](#aspnet-core-hosting-models)
+2. [Azure Functions Execution Models](#azure-functions-execution-models)
+3. [Performance Considerations](#performance-considerations)
+4. [Migration Strategies](#migration-strategies)
+5. [Decision Framework](#decision-framework)
+
+---
+
+## ASP.NET Core Hosting Models
+
+### In-Process Hosting (IIS Integration)
+
+In-process hosting runs your ASP.NET Core application inside the same process as the IIS worker process (w3wp.exe or iisexpress.exe).
+
+#### Architecture
+
+```
+┌─────────────────────────────────────┐
+│   IIS Worker Process (w3wp.exe)     │
+│  ┌───────────────────────────────┐  │
+│  │   ASP.NET Core Module         │  │
+│  │  ┌─────────────────────────┐  │  │
+│  │  │  Your Application       │  │  │
+│  │  │  (Kestrel not used)     │  │  │
+│  │  └─────────────────────────┘  │  │
+│  └───────────────────────────────┘  │
+└─────────────────────────────────────┘
+```
+
+#### Configuration
+
+**web.config:**
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <location path="." inheritInChildApplications="false">
+    <system.webServer>
+      <handlers>
+        <add name="aspNetCore" path="*" verb="*" 
+             modules="AspNetCoreModuleV2" 
+             resourceType="Unspecified" />
+      </handlers>
+      <aspNetCore processPath="dotnet"
+                  arguments=".\MyApp.dll"
+                  stdoutLogEnabled="false"
+                  stdoutLogFile=".\logs\stdout"
+                  hostingModel="inprocess" />
+    </system.webServer>
+  </location>
+</configuration>
+```
+
+**Project File:**
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
+  </PropertyGroup>
+</Project>
+```
+
+#### Characteristics
+
+**Advantages:**
+- **Better Performance**: Eliminates inter-process communication overhead (20-30% performance improvement)
+- **Lower Memory Footprint**: Single process consumes less memory
+- **Simplified Deployment**: Fewer moving parts to manage
+- **Direct Request Handling**: Requests flow directly to application without proxy overhead
+
+**Limitations:**
+- **IIS Dependency**: Only works with IIS on Windows
+- **Limited Isolation**: Application crashes can affect IIS worker process
+- **Debugging Complexity**: Harder to attach debuggers in production scenarios
+- **Single Framework Version**: All apps in app pool must use same .NET version
+
+#### Use Cases
+
+Best suited for:
+- Windows Server deployments with IIS
+- Applications requiring maximum performance on Windows
+- Scenarios where memory efficiency is critical
+- Internal corporate applications with controlled environments
+
+---
+
+### Out-of-Process Hosting (Reverse Proxy)
+
+Out-of-process hosting runs your ASP.NET Core application as a separate process, with IIS acting as a reverse proxy to the Kestrel web server.
+
+#### Architecture
+
+```
+┌──────────────────────┐         ┌────────────────────────┐
+│  IIS (w3wp.exe)      │         │  Your Application      │
+│  ┌────────────────┐  │         │  ┌──────────────────┐  │
+│  │ ASP.NET Core   │  │ HTTP    │  │  Kestrel Server  │  │
+│  │ Module (Proxy) │──┼────────>│  │  (Your App)      │  │
+│  └────────────────┘  │         │  └──────────────────┘  │
+└──────────────────────┘         └────────────────────────┘
+   Port 80/443                      Port 5000 (internal)
+```
+
+#### Configuration
+
+**web.config:**
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <location path="." inheritInChildApplications="false">
+    <system.webServer>
+      <handlers>
+        <add name="aspNetCore" path="*" verb="*" 
+             modules="AspNetCoreModuleV2" 
+             resourceType="Unspecified" />
+      </handlers>
+      <aspNetCore processPath="dotnet"
+                  arguments=".\MyApp.dll"
+                  stdoutLogEnabled="false"
+                  stdoutLogFile=".\logs\stdout"
+                  hostingModel="outofprocess" />
+    </system.webServer>
+  </location>
+</configuration>
+```
+
+**Project File:**
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>
+  </PropertyGroup>
+</Project>
+```
+
+**Program.cs Configuration:**
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Configure Kestrel for out-of-process hosting
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxConcurrentConnections = 100;
+    serverOptions.Limits.MaxRequestBodySize = 52428800; // 50 MB
+});
+
+// Configure forwarded headers for reverse proxy scenarios
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | 
+                               ForwardedHeaders.XForwardedProto;
+    options.KnownProxies.Add(IPAddress.Parse("10.0.0.1")); // IIS proxy
+});
+
+var app = builder.Build();
+
+// Use forwarded headers middleware
+app.UseForwardedHeaders();
+
+app.Run();
+```
+
+#### Characteristics
+
+**Advantages:**
+- **Process Isolation**: Application crashes don't affect IIS
+- **Cross-Platform**: Same model works on Linux, macOS, Windows
+- **Easier Debugging**: Can attach debugger to separate process
+- **Framework Flexibility**: Different apps can use different .NET versions
+- **Better Resource Control**: Independent process management
+
+**Limitations:**
+- **Additional Overhead**: Inter-process communication adds latency (5-10ms)
+- **Higher Memory Usage**: Two processes (IIS + Kestrel) consume more memory
+- **Complex Configuration**: More components to configure and monitor
+- **Port Management**: Need to manage internal port assignments
+
+#### Use Cases
+
+Best suited for:
+- Cross-platform deployments (Linux, Docker, Kubernetes)
+- Microservices architectures
+- Applications requiring strong process isolation
+- Development environments matching production (Linux containers)
+- Multiple apps with different .NET versions on same server
+
+---
+
+## Azure Functions Execution Models
+
+Azure Functions has its own execution model terminology that's conceptually similar but serves different purposes.
+
+### In-Process Model (Legacy)
+
+The function code runs in the same process as the Functions host runtime.
+
+#### Architecture
+
+```
+┌───────────────────────────────────────┐
+│   Azure Functions Host Process        │
+│  ┌─────────────────────────────────┐  │
+│  │   Functions Runtime             │  │
+│  │  ┌───────────────────────────┐  │  │
+│  │  │  Your Function Code       │  │  │
+│  │  │  (.NET In-Process)        │  │  │
+│  │  └───────────────────────────┘  │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+```
+
+#### Configuration
+
+**Project File (.NET 6 In-Process):**
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="4.4.0" />
+  </ItemGroup>
+</Project>
+```
+
+**Function Example:**
+```csharp
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Extensions.Logging;
+
+public static class HttpTriggerFunction
+{
+    [FunctionName("HttpTrigger")]
+    public static async Task<IActionResult> Run(
+        [HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequest req,
+        ILogger log)
+    {
+        log.LogInformation("C# HTTP trigger function processed a request.");
+        
+        string name = req.Query["name"];
+        
+        return new OkObjectResult($"Hello, {name}");
+    }
+}
+```
+
+#### Characteristics
+
+**Advantages:**
+- **Better Cold Start Performance**: Faster initialization (30-50% improvement)
+- **Lower Memory Usage**: Single process architecture
+- **Simpler Deployment**: Fewer dependencies to manage
+- **Direct Access to Host Features**: Easier integration with Functions runtime
+
+**Limitations:**
+- **Version Locking**: Tied to specific .NET version supported by host
+- **.NET 6 or Earlier Only**: In-process model not supported on .NET 8+
+- **Limited Hosting Options**: Not compatible with Flex Consumption plan
+- **Breaking Changes Risk**: Runtime updates can impact your code
+- **Maintenance Mode**: Microsoft recommending migration to isolated model
+
+---
+
+### Isolated Worker Process Model (Recommended)
+
+The function code runs in a separate .NET process, independent of the Functions host.
+
+#### Architecture
+
+```
+┌──────────────────────┐         ┌────────────────────────┐
+│  Functions Host      │         │  Isolated Worker       │
+│  (Node.js Runtime)   │ gRPC    │  ┌──────────────────┐  │
+│  ┌────────────────┐  │────────>│  │  Your Functions  │  │
+│  │  Trigger/Bind  │  │         │  │  (.NET 8)        │  │
+│  └────────────────┘  │         │  └──────────────────┘  │
+└──────────────────────┘         └────────────────────────┘
+```
+
+#### Configuration
+
+**Project File (.NET 8 Isolated):**
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.17.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.1.0" />
+  </ItemGroup>
+</Project>
+```
+
+**Program.cs:**
+```csharp
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+var host = new HostBuilder()
+    .ConfigureFunctionsWorkerDefaults()
+    .ConfigureServices(services =>
+    {
+        services.AddApplicationInsightsTelemetryWorkerService();
+        services.ConfigureFunctionsApplicationInsights();
+        
+        // Register your services
+        services.AddSingleton<IMyService, MyService>();
+    })
+    .Build();
+
+await host.RunAsync();
+```
+
+**Function Example:**
+```csharp
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using System.Net;
+
+public class HttpTriggerFunction
+{
+    private readonly ILogger<HttpTriggerFunction> _logger;
+    private readonly IMyService _myService;
+
+    public HttpTriggerFunction(
+        ILogger<HttpTriggerFunction> logger,
+        IMyService myService)
+    {
+        _logger = logger;
+        _myService = myService;
+    }
+
+    [Function("HttpTrigger")]
+    public async Task<HttpResponseData> Run(
+        [HttpTrigger(AuthorizationLevel.Function, "get", "post")] 
+        HttpRequestData req)
+    {
+        _logger.LogInformation("Processing request");
+        
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteStringAsync("Hello from isolated process!");
+        
+        return response;
+    }
+}
+```
+
+#### Characteristics
+
+**Advantages:**
+- **Latest .NET Versions**: Use .NET 8, 9, and future versions immediately
+- **Process Isolation**: Function failures don't crash the host
+- **Flexible Middleware**: Custom middleware pipeline support
+- **Better Dependency Injection**: Full .NET dependency injection capabilities
+- **Future-Proof**: Microsoft's recommended path forward
+- **Flex Consumption Support**: Compatible with newest hosting plans
+
+**Limitations:**
+- **Slightly Higher Cold Start**: Additional process initialization (50-100ms)
+- **More Memory**: Separate process requires additional memory
+- **gRPC Overhead**: Communication between host and worker adds minimal latency
+- **Migration Required**: Existing in-process functions need code changes
+
+#### Use Cases
+
+Best suited for:
+- New Azure Functions projects (all scenarios)
+- Functions requiring latest .NET features
+- Projects needing Flex Consumption plan benefits
+- Long-term maintainability and support
+- Complex dependency injection requirements
+
+---
+
+## Performance Considerations
+
+### ASP.NET Core Hosting Performance
+
+#### Benchmarks (Requests per Second)
+
+**Simple Hello World API:**
+- In-Process: ~50,000 RPS
+- Out-of-Process: ~42,000 RPS
+- Performance difference: ~16% in favor of in-process
+
+**Real-World API with Database Access:**
+- In-Process: ~8,500 RPS
+- Out-of-Process: ~8,000 RPS
+- Performance difference: ~6% (database becomes bottleneck)
+
+#### Memory Usage Comparison
+
+**Single Application:**
+- In-Process: ~120 MB
+- Out-of-Process: ~180 MB (IIS: ~80 MB + Kestrel: ~100 MB)
+
+**Multiple Applications on Same Server:**
+- In-Process: Shared app pool overhead beneficial
+- Out-of-Process: Each app has independent memory requirements
+
+### Azure Functions Performance
+
+#### Cold Start Times
+
+**HTTP Trigger (Simple Function):**
+- In-Process (.NET 6): ~600-800ms
+- Isolated (.NET 8): ~700-1000ms
+- Difference: ~100-200ms slower for isolated
+
+**HTTP Trigger (Complex Dependencies):**
+- In-Process: ~1200-1500ms
+- Isolated: ~1300-1700ms
+- Difference: Minimal (~200ms) as initialization dominates
+
+#### Warm Execution Performance
+
+**Per Request Latency:**
+- In-Process: ~15-20ms
+- Isolated: ~18-25ms
+- gRPC overhead: ~2-5ms
+
+**Throughput (Concurrent Requests):**
+- In-Process: Slightly higher due to shared process
+- Isolated: Better under high load due to isolation
+
+### Optimization Strategies
+
+#### For In-Process (ASP.NET Core)
+
+```csharp
+// Optimize for in-process hosting
+public class Startup
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // Use singleton for expensive services
+        services.AddSingleton<IExpensiveService, ExpensiveService>();
+        
+        // Configure response caching
+        services.AddResponseCaching();
+        
+        // Optimize JSON serialization
+        services.AddControllers()
+            .AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+                options.JsonSerializerOptions.PropertyNamingPolicy = null;
+            });
+    }
+    
+    public void Configure(IApplicationBuilder app)
+    {
+        // Enable response compression
+        app.UseResponseCompression();
+        
+        // Use response caching
+        app.UseResponseCaching();
+    }
+}
+```
+
+#### For Out-of-Process (ASP.NET Core)
+
+```csharp
+// Optimize Kestrel configuration
+builder.WebHost.ConfigureKestrel(options =>
+{
+    // Increase connection limits
+    options.Limits.MaxConcurrentConnections = 100;
+    options.Limits.MaxConcurrentUpgradedConnections = 100;
+    
+    // Configure request limits
+    options.Limits.MaxRequestBodySize = 52428800;
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
+    
+    // Enable HTTP/2
+    options.ConfigureEndpointDefaults(listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http1AndHttp2;
+    });
+});
+
+// Configure connection pooling
+builder.Services.AddHttpClient("external-api", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    MaxConnectionsPerServer = 20
+});
+```
+
+#### For Isolated Azure Functions
+
+```csharp
+// Optimize startup performance
+var host = new HostBuilder()
+    .ConfigureFunctionsWorkerDefaults(builder =>
+    {
+        // Configure worker options
+        builder.Services.Configure<WorkerOptions>(options =>
+        {
+            options.Serializer = new JsonObjectSerializer();
+        });
+    })
+    .ConfigureServices(services =>
+    {
+        // Use singleton for expensive initializations
+        services.AddSingleton<ICosmosDbService>(sp =>
+        {
+            var cosmosClient = new CosmosClient(
+                connectionString,
+                new CosmosClientOptions
+                {
+                    ConnectionMode = ConnectionMode.Direct,
+                    MaxRetryAttemptsOnRateLimitedRequests = 3
+                });
+            return new CosmosDbService(cosmosClient);
+        });
+        
+        // Configure HTTP client for reuse
+        services.AddHttpClient("api-client")
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+                PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
+                MaxConnectionsPerServer = 50
+            });
+    })
+    .Build();
+```
+
+---
+
+## Migration Strategies
+
+### ASP.NET Core: In-Process to Out-of-Process
+
+#### Step 1: Update Project Configuration
+
+```xml
+<!-- Change from InProcess -->
+<AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
+
+<!-- To OutOfProcess -->
+<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>
+```
+
+#### Step 2: Configure Forwarded Headers
+
+```csharp
+// Add at application startup
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = 
+        ForwardedHeaders.XForwardedFor | 
+        ForwardedHeaders.XForwardedProto;
+    
+    // If using known proxy IPs
+    options.KnownProxies.Add(IPAddress.Parse("10.0.0.1"));
+});
+
+// Use middleware early in pipeline
+app.UseForwardedHeaders();
+```
+
+#### Step 3: Test and Validate
+
+- Verify HTTPS redirection works correctly
+- Confirm client IP addresses are preserved
+- Test authentication flows (especially cookie-based auth)
+- Validate logging captures correct source IPs
+
+### Azure Functions: In-Process to Isolated
+
+#### Step 1: Create New Isolated Project
+
+```bash
+# Install template
+dotnet new install Microsoft.Azure.Functions.Worker.ProjectTemplates
+
+# Create isolated function app
+dotnet new func-isolated -n MyFunctionApp.Isolated
+```
+
+#### Step 2: Update Dependencies
+
+```xml
+<ItemGroup>
+  <!-- Remove in-process packages -->
+  <!-- <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="4.4.0" /> -->
+  
+  <!-- Add isolated packages -->
+  <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.21.0" />
+  <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.17.0" />
+  <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.1.0" />
+</ItemGroup>
+```
+
+#### Step 3: Migrate Function Code
+
+**Before (In-Process):**
+```csharp
+[FunctionName("GetUser")]
+public static async Task<IActionResult> Run(
+    [HttpTrigger(AuthorizationLevel.Function, "get")] HttpRequest req,
+    ILogger log)
+{
+    string id = req.Query["id"];
+    // Function logic
+    return new OkObjectResult(result);
+}
+```
+
+**After (Isolated):**
+```csharp
+[Function("GetUser")]
+public async Task<HttpResponseData> Run(
+    [HttpTrigger(AuthorizationLevel.Function, "get")] HttpRequestData req)
+{
+    _logger.LogInformation("Processing request");
+    
+    var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+    string id = query["id"];
+    
+    // Function logic
+    
+    var response = req.CreateResponse(HttpStatusCode.OK);
+    await response.WriteAsJsonAsync(result);
+    return response;
+}
+```
+
+#### Step 4: Update Bindings
+
+**Cosmos DB Binding - Before:**
+```csharp
+[FunctionName("SaveData")]
+public static async Task Run(
+    [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req,
+    [CosmosDB(
+        databaseName: "MyDatabase",
+        collectionName: "MyContainer",
+        ConnectionStringSetting = "CosmosDb")] IAsyncCollector<MyDocument> documents)
+{
+    await documents.AddAsync(newDocument);
+}
+```
+
+**Cosmos DB Binding - After:**
+```csharp
+[Function("SaveData")]
+public async Task Run(
+    [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req,
+    [CosmosDBOutput(
+        databaseName: "MyDatabase",
+        containerName: "MyContainer",
+        Connection = "CosmosDb")] IAsyncCollector<MyDocument> documents)
+{
+    await documents.AddAsync(newDocument);
+}
+```
+
+#### Step 5: Configure Dependency Injection
+
+```csharp
+// Program.cs
+var host = new HostBuilder()
+    .ConfigureFunctionsWorkerDefaults()
+    .ConfigureServices(services =>
+    {
+        // Migrate service registrations
+        services.AddSingleton<IMyService, MyService>();
+        services.AddHttpClient<IApiClient, ApiClient>();
+        
+        // Add configuration
+        services.AddOptions<MySettings>()
+            .Configure<IConfiguration>((settings, config) =>
+            {
+                config.GetSection("MySettings").Bind(settings);
+            });
+    })
+    .Build();
+
+await host.RunAsync();
+```
+
+#### Step 6: Update local.settings.json
+
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+  }
+}
+```
+
+---
+
+## Decision Framework
+
+### ASP.NET Core Hosting: When to Choose Each Model
+
+#### Choose In-Process When:
+
+✅ Deploying exclusively to Windows Server with IIS  
+✅ Performance is critical and every millisecond matters  
+✅ Memory efficiency is a primary concern  
+✅ All applications can use the same .NET version  
+✅ Internal applications with controlled deployment environments  
+✅ Existing infrastructure is Windows-based and IIS-optimized  
+
+#### Choose Out-of-Process When:
+
+✅ Cross-platform deployment (Linux, containers, cloud)  
+✅ Microservices architecture  
+✅ Need different .NET versions for different applications  
+✅ Process isolation and fault tolerance are priorities  
+✅ Matching development and production environments (Docker/K8s)  
+✅ Future migration to non-Windows platforms is possible  
+
+### Azure Functions: When to Choose Each Model
+
+#### Choose In-Process When:
+
+⚠️ **Limited Use Cases** - Only consider if:
+- Maintaining existing .NET 6 functions without migration budget
+- Absolute minimum cold start time is critical (rare)
+- Cannot migrate to isolated model in near term
+
+**Note**: Microsoft recommends isolated model for all new development.
+
+#### Choose Isolated When:
+
+✅ **All new Azure Functions projects** (Microsoft recommendation)  
+✅ Need .NET 8 or newer features  
+✅ Want to use Flex Consumption plan  
+✅ Complex dependency injection requirements  
+✅ Custom middleware or advanced request processing  
+✅ Long-term support and future compatibility  
+✅ Modern development practices and tooling  
+
+### Quick Decision Matrix
+
+| Criteria | ASP.NET: In-Process | ASP.NET: Out-of-Process | Functions: Isolated |
+|----------|---------------------|-------------------------|---------------------|
+| **Best Performance** | ✅ Yes | ⚠️ Good | ⚠️ Good |
+| **Cross-Platform** | ❌ No | ✅ Yes | ✅ Yes |
+| **Latest .NET** | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Process Isolation** | ❌ No | ✅ Yes | ✅ Yes |
+| **Memory Efficiency** | ✅ Best | ⚠️ Good | ⚠️ Good |
+| **Future Support** | ✅ Yes | ✅ Yes | ✅ Recommended |
+| **Debugging Ease** | ⚠️ Moderate | ✅ Easy | ✅ Easy |
+| **Cold Start** | N/A | N/A | ⚠️ Slightly Slower |
+
+---
+
+## Best Practices Summary
+
+### ASP.NET Core In-Process
+
+1. **Use for Windows-only deployments** where performance is paramount
+2. **Monitor app pool health** since app crashes affect the pool
+3. **Optimize for shared resources** within the app pool
+4. **Test thoroughly** as debugging production issues is harder
+
+### ASP.NET Core Out-of-Process
+
+1. **Always configure forwarded headers** for correct client IP and HTTPS
+2. **Optimize Kestrel settings** for your workload
+3. **Monitor both processes** (IIS and application)
+4. **Use health checks** for better load balancer integration
+
+### Azure Functions Isolated (Recommended)
+
+1. **Use for all new projects** - Microsoft's strategic direction
+2. **Optimize startup** with singleton services for expensive resources
+3. **Implement proper logging** with dependency injection
+4. **Use latest SDK versions** for best performance and features
+5. **Plan migration path** for existing in-process functions
+
+### Common Pitfalls to Avoid
+
+❌ **Don't assume in-process is always faster** - measure your specific workload  
+❌ **Don't forget forwarded headers** in out-of-process (breaks HTTPS, IPs)  
+❌ **Don't use in-process for new Azure Functions** - it's legacy path  
+❌ **Don't ignore cold start optimization** in isolated functions  
+❌ **Don't skip load testing** when changing execution models  
+
+---
+
+## Conclusion
+
+The choice between in-process and out-of-process execution models significantly impacts your application's architecture, performance, and maintainability:
+
+**For ASP.NET Core**: Out-of-process is generally recommended for most scenarios due to cross-platform compatibility, process isolation, and flexibility. In-process offers performance benefits but limits deployment options.
+
+**For Azure Functions**: Isolated worker process is the clear choice for all new development, providing latest .NET support, better isolation, and future compatibility despite minimal performance tradeoffs.
+
+Always measure performance in your specific scenario and consider long-term maintenance, team skills, and deployment requirements when making this architectural decision.
+
+---
+
+## Additional Resources
+
+- [ASP.NET Core hosting models documentation](https://learn.microsoft.com/aspnet/core/host-and-deploy/iis/in-process-hosting)
+- [Azure Functions execution models](https://learn.microsoft.com/azure/azure-functions/dotnet-isolated-process-guide)
+- [Kestrel web server configuration](https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel)
+- [Azure Functions performance best practices](https://learn.microsoft.com/azure/azure-functions/functions-best-practices)
+
+**Document Version**: 1.0  
+**Last Updated**: December 2024  
+**Target .NET Versions**: .NET 6, 7, 8, 9
